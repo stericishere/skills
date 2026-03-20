@@ -1,0 +1,8 @@
+.DS_Store
+
+# Embedded git repos - add as submodules if needed
+archive/notebooklm/
+gstack/
+implementation-toolkit/testing/ios-simulator-skill/
+koda-stack/
+n8n/n8n-skills/
