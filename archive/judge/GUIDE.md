@@ -1,18 +1,18 @@
 ---
 name: sadd:judge
-description: Launch a sub-agent judge to evaluate results produced in the current conversation
+description: Launch a judge teammate to evaluate results produced in the current conversation using Agent Teams
 argument-hint: "[evaluation-focus]"
 ---
 
 # Judge Command
 
 <task>
-You are a coordinator launching a specialized judge sub-agent to evaluate work produced earlier in this conversation. The judge operates with isolated context, provides structured evaluation with evidence-based scoring, and returns actionable feedback.
+You are a coordinator launching a specialized judge teammate to evaluate work produced earlier in this conversation. The judge operates with isolated context, provides structured evaluation with evidence-based scoring, and returns actionable feedback.
 </task>
 
 <context>
-This command implements the LLM-as-Judge pattern with context isolation:
-- **Context Isolation**: Judge operates with fresh context, preventing confirmation bias from accumulated session state
+This command implements the LLM-as-Judge pattern with context isolation using the Agent Teams API:
+- **Context Isolation**: Judge teammate operates with fresh context, preventing confirmation bias from accumulated session state
 - **Chain-of-Thought Scoring**: Justification BEFORE score for 15-25% reliability improvement
 - **Evidence-Based**: Every score requires specific citations from the work (file locations, line numbers)
 - **Multi-Dimensional Rubric**: Weighted criteria with clear level descriptions
@@ -25,7 +25,7 @@ The evaluation is **report-only** - findings are presented without automatic cha
 
 ### Phase 1: Context Extraction
 
-Before launching the judge, identify what needs evaluation:
+Before launching the judge teammate, identify what needs evaluation:
 
 1. **Identify the work to evaluate**:
    - Review conversation history for completed work
@@ -47,14 +47,33 @@ Before launching the judge, identify what needs evaluation:
    - Files involved: [list]
    - Evaluation focus: [from arguments or "general quality"]
 
-   Launching judge sub-agent...
+   Launching judge teammate...
    ```
 
-**IMPORTANT**: Pass only the extracted context to the judge - not the entire conversation. This prevents context pollution and enables focused assessment.
+**IMPORTANT**: Pass only the extracted context to the judge teammate - not the entire conversation. This prevents context pollution and enables focused assessment.
 
-### Phase 2: Launch Judge Sub-Agent
+### Phase 2: Create Team and Launch Judge Teammate
 
-Use the Task tool to spawn a single judge agent with the following prompt and context. Adjust criteria rubric and weights to match solution type and complexity, for example:
+Set up the team and spawn the judge:
+
+```
+1. TeamCreate("judge-eval-{topic}", "Judge evaluation of {work description}")
+   → Creates team config at ~/.claude/teams/{name}/config.json
+   → Creates task directory at ~/.claude/tasks/{name}/
+
+2. TaskCreate(
+     title: "Evaluate: {work description}",
+     description: "{evaluation criteria and focus areas}"
+   )
+
+3. Agent(
+     prompt: {judge prompt below},
+     team_name: "judge-eval-{topic}",
+     name: "judge"
+   )
+```
+
+Adjust criteria rubric and weights to match solution type and complexity, for example:
 
 - Code Quality
 - Documentation Quality
@@ -70,7 +89,7 @@ Use the Task tool to spawn a single judge agent with the following prompt and co
 - Accessibility
 - Performance
 
-**Judge Agent Prompt:**
+**Judge Teammate Prompt:**
 
 ```markdown
 You are an Expert Judge evaluating the quality of work produced in a development session.
@@ -186,7 +205,7 @@ Is the output well-structured and easy to understand?
 
 ### Phase 3: Process and Present Results
 
-After receiving the judge's evaluation:
+After receiving the judge teammate's evaluation:
 
 1. **Validate the evaluation**:
    - Check that all criteria have scores in valid range (1-5)
@@ -197,6 +216,7 @@ After receiving the judge's evaluation:
 
 2. **If validation fails**:
    - Note the specific issue
+   - SendMessage(to: "judge", message: "Clarification needed: {specific issue}")
    - Request clarification or re-evaluation if needed
 
 3. **Present results to user**:
@@ -206,6 +226,11 @@ After receiving the judge's evaluation:
      - Address specific improvements
      - Request clarification on any judgment
      - Proceed with the work as-is
+
+4. **Cleanup**:
+   - TaskUpdate(task_id, status: "completed")
+   - SendMessage(to: "judge", message: "Evaluation complete. Please shut down.")
+   - TeamDelete()
 
 ## Scoring Interpretation
 
@@ -219,7 +244,7 @@ After receiving the judge's evaluation:
 
 ## Important Guidelines
 
-1. **Context Isolation**: Pass only relevant context to the judge - not the entire conversation
+1. **Context Isolation**: Pass only relevant context to the judge teammate - not the entire conversation
 2. **Justification First**: Always require evidence and reasoning BEFORE the score
 3. **Evidence-Based**: Every score must cite specific evidence (file paths, line numbers, quotes)
 4. **Bias Mitigation**: Explicitly warn against length bias, verbosity bias, and authority bias
@@ -228,15 +253,17 @@ After receiving the judge's evaluation:
 7. **Be Constructive**: Frame criticism as opportunities for improvement with impact context
 8. **Consider Context**: Account for stated constraints, complexity, and requirements
 9. **Report Confidence**: Lower confidence when evidence is ambiguous or criteria unclear
-10. **Single Judge**: This command uses one focused judge for context isolation
+10. **Single Judge Teammate**: This command uses one focused judge for context isolation
+11. **Clean Up**: Always TeamDelete when evaluation is complete
 
 ## Notes
 
 - This is a **report-only** command - it evaluates but does not modify work
-- The judge operates with fresh context for unbiased assessment
+- The judge teammate operates with fresh context for unbiased assessment
 - Scores are calibrated to professional development standards
 - Low scores indicate improvement opportunities, not failures
 - Use the evaluation to inform next steps and iterations
 - Pass threshold (3.5/5.0) represents acceptable quality for general use
 - Adjust threshold based on criticality (4.0+ for critical operations)
 - Low confidence evaluations may warrant human review
+- TeamDelete ensures clean resource management after evaluation

@@ -1,17 +1,17 @@
 ---
 name: sadd:do-competitively
-description: Execute tasks through competitive multi-agent generation, multi-judge evaluation, and evidence-based synthesis
+description: Execute tasks through competitive multi-teammate generation, multi-judge evaluation, and evidence-based synthesis using agent teams
 argument-hint: Task description and optional output path/criteria
 ---
 
 # do-competitively
 
 <task>
-Execute tasks through competitive multi-agent generation, multi-judge evaluation, and evidence-based synthesis to produce superior results by combining the best elements from parallel implementations.
+Execute tasks through competitive multi-teammate generation, multi-judge evaluation, and evidence-based synthesis to produce superior results by combining the best elements from parallel implementations.
 </task>
 
 <context>
-This command implements the Generate-Critique-Synthesize (GCS) pattern with adaptive strategy selection for high-stakes tasks where quality matters more than speed. It combines competitive generation with multi-perspective evaluation and intelligently selects the optimal synthesis strategy based on results.
+This command implements the Generate-Critique-Synthesize (GCS) pattern with adaptive strategy selection for high-stakes tasks where quality matters more than speed. It uses the Agent Teams API to coordinate teammates through shared task lists and inter-agent messaging.
 
 **Key features:**
 
@@ -21,7 +21,7 @@ This command implements the Generate-Critique-Synthesize (GCS) pattern with adap
 - Average 15-20% cost savings through intelligent strategy selection
 </context>
 
-CRITICAL: You are not implementation agent or judge, you shoudn't read files that provided as context for sub-agent or task. You shouldn't read reports, you shouldn't overwhelm your context with unneccesary information. You MUST follow process step by step. Any diviations will be considered as failure and you will be killed!
+CRITICAL: You are not implementation agent or judge, you shoudn't read files that provided as context for teammates or tasks. You shouldn't read reports, you shouldn't overwhelm your context with unneccesary information. You MUST follow process step by step. Any diviations will be considered as failure and you will be killed!
 
 ## Pattern: Generate-Critique-Synthesize (GCS)
 
@@ -29,9 +29,9 @@ This command implements a four-phase adaptive competitive orchestration pattern:
 
 ```
 Phase 1: Competitive Generation with Self-Critique
-         ┌─ Agent 1 → Draft → Critique → Revise → Solution A ─┐
-Task ───┼─ Agent 2 → Draft → Critique → Revise → Solution B ─┼─┐
-         └─ Agent 3 → Draft → Critique → Revise → Solution C ─┘ │
+         ┌─ Teammate A → Draft → Critique → Revise → Solution A ─┐
+Task ───┼─ Teammate B → Draft → Critique → Revise → Solution B ─┼─┐
+         └─ Teammate C → Draft → Critique → Revise → Solution C ─┘ │
                                                                   │
 Phase 2: Multi-Judge Evaluation with Verification                │
          ┌─ Judge 1 → Evaluate → Verify → Revise → Report A ─┐  │
@@ -51,12 +51,19 @@ Phase 3: Evidence-Based Synthesis        │                       │
 
 ## Process
 
-### Setup: Create Reports Directory
+### Setup: Create Reports Directory and Agent Team
 
-Before starting, ensure the reports directory exists:
+Before starting, ensure the reports directory exists and create the team:
 
 ```bash
 mkdir -p .specs/reports
+```
+
+```
+TeamCreate(
+  team_name: "competitive-{solution-name}",
+  description: "Competitive generation and evaluation for '{task}'"
+)
 ```
 
 **Report naming convention:** `.specs/reports/{solution-name}-{YYYY-MM-DD}.[1|2|3].md`
@@ -71,10 +78,24 @@ Where:
 
 ### Phase 1: Competitive Generation
 
-Launch **3 independent agents in parallel** (recommended: Opus for quality):
+**Step 1: Create generation tasks in the shared task list**
 
-1. Each agent receives **identical task description and context**
-2. Agents work **independently without seeing each other's work**
+```
+TaskCreate(title: "Generate solution A for {task}", description: "...")
+TaskCreate(title: "Generate solution B for {task}", description: "...")
+TaskCreate(title: "Generate solution C for {task}", description: "...")
+```
+
+**Step 2: Launch 3 independent teammates in parallel** (recommended: Opus for quality):
+
+```
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "generator-a")
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "generator-b")
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "generator-c")
+```
+
+1. Each teammate receives **identical task description and context**
+2. Teammates work **independently without seeing each other's work**
 3. Each produces a **complete solution** to the same problem
 4. Solutions are saved to distinct files (e.g., `{solution-file}.[a|b|c].[ext]`)
 
@@ -82,12 +103,12 @@ Launch **3 independent agents in parallel** (recommended: Opus for quality):
 Where:
 
 - `{solution-file}` - Derived from task (e.g., `create users.ts` result in `users` as solution file)
-- `[a|b|c]` - Unique identifier per sub-agent
+- `[a|b|c]` - Unique identifier per teammate
 - `[ext]` - File extension (e.g., `md`, `ts` and etc.)
 
-**Key principle:** Diversity through independence - agents explore different approaches.
+**Key principle:** Diversity through independence - teammates explore different approaches.
 
-CRITICAL: You MUST provide filename with [a|b|c] identifier to agents and judges!!! Missing it, will result in your TERMINATION imidiatly!
+CRITICAL: You MUST provide filename with [a|b|c] identifier to teammates and judges!!! Missing it, will result in your TERMINATION imidiatly!
 
 **Prompt template for generators:**
 
@@ -105,7 +126,7 @@ CRITICAL: You MUST provide filename with [a|b|c] identifier to agents and judges
 </context>
 
 <output>
-{define expected output following such pattern: {solution-file}.[a|b|c].[ext] based on the task description and context. Each [a|b|c] is a unique identifier per sub-agent. You MUST provide filename with it!!!}
+{define expected output following such pattern: {solution-file}.[a|b|c].[ext] based on the task description and context. Each [a|b|c] is a unique identifier per teammate. You MUST provide filename with it!!!}
 </output>
 
 Instructions:
@@ -124,9 +145,27 @@ Let's approach this systematically to produce the best possible solution.
 8. Explain what was changed and why
 ```
 
+**Step 3: Mark generation tasks complete**
+
+Use `TaskList` to check progress. Teammates mark their own tasks via `TaskUpdate(task_id, status: "completed")` when done.
+
 ### Phase 2: Multi-Judge Evaluation
 
-Launch **3 independent judges in parallel** (recommended: Opus for rigor):
+**Step 1: Create evaluation tasks in the shared task list**
+
+```
+TaskCreate(title: "Judge evaluation 1 for {task}", description: "...")
+TaskCreate(title: "Judge evaluation 2 for {task}", description: "...")
+TaskCreate(title: "Judge evaluation 3 for {task}", description: "...")
+```
+
+**Step 2: Launch 3 independent judge teammates in parallel** (recommended: Opus for rigor):
+
+```
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "judge-1")
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "judge-2")
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "judge-3")
+```
 
 1. Each judge receives path to **ALL candidate solutions** (A, B, C)
 2. Judges evaluate against **clear criteria** (correctness, design quality, maintainability, etc.)
@@ -207,7 +246,7 @@ Final checklist:
 
 ### Phase 2.5: Adaptive Strategy Selection (Early Return)
 
-**The orchestrator** (not a subagent) analyzes judge outputs to determine the optimal strategy.
+**The orchestrator** (not a teammate) analyzes judge outputs to determine the optimal strategy.
 
 #### Decision Logic
 
@@ -251,9 +290,10 @@ If none of the above conditions met:
 **Process:**
 
 1. Select the winning solution as the base
-2. Launch subagent to apply specific improvements from judge feedback
-3. Cherry-pick 1-2 best elements from runner-up solutions
-4. Document what was added and why
+2. Create a polish task: `TaskCreate(title: "Polish winning solution", description: "...")`
+3. Launch a teammate to apply specific improvements from judge feedback
+4. Cherry-pick 1-2 best elements from runner-up solutions
+5. Document what was added and why
 
 **Benefits:**
 
@@ -311,13 +351,14 @@ CRITICAL: Preserve the winning solution's core approach. Make targeted improveme
 
 **Process:**
 
-1. Launch new agent to analyze the failure modes and lessons learned. Ask the agent to:
+1. Create a redesign task: `TaskCreate(title: "Analyze failures and redesign", description: "...")`
+2. Launch new teammate to analyze the failure modes and lessons learned. Ask the teammate to:
    - Think through step by step: what went wrong with each solution?
    - Analyze common failure modes across all solutions
    - Extract lessons learned (what NOT to do)
    - Identify the root causes of why all approaches failed
    - Generate new task decomposition or constraints based on these insights
-2. **Return to Phase 1**, provide to new implementation agents the lessons learned and new constraints.
+3. **Return to Phase 1**, provide to new implementation teammates the lessons learned and new constraints.
 
 **Prompt template for new implementation:**
 
@@ -378,7 +419,7 @@ Let's break this down systematically to understand what went wrong and how to de
 
 #### Strategy 3: FULL_SYNTHESIS (Default)
 
-**When:** No clear winner AND solutions have merit (scores ≥3.0)
+**When:** No clear winner AND solutions have merit (scores >=3.0)
 
 **Process:** Proceed to Phase 3 (Evidence-Based Synthesis)
 
@@ -386,16 +427,26 @@ Let's break this down systematically to understand what went wrong and how to de
 
 **Only executed when Strategy 3 (FULL_SYNTHESIS) selected in Phase 2.5**
 
-Launch **1 synthesis agent** (recommended: Opus for quality):
+**Step 1: Create synthesis task**
 
-1. Agent receives:
+```
+TaskCreate(title: "Synthesize best solution from candidates", description: "...")
+```
+
+**Step 2: Launch 1 synthesis teammate** (recommended: Opus for quality):
+
+```
+Agent(prompt: ..., team_name: "competitive-{solution-name}", name: "synthesizer")
+```
+
+1. Teammate receives:
    - **All candidate solutions** (A, B, C)
    - **All evaluation reports** (1, 2, 3)
-2. Agent analyzes:
+2. Teammate analyzes:
    - Which elements each judge praised (consensus on strengths)
    - Which issues each judge identified (consensus on weaknesses)
    - Where solutions differed in approach
-3. Agent produces **final solution** by:
+3. Teammate produces **final solution** by:
    - **Copying superior sections** when one solution clearly wins
    - **Combining approaches** when hybrid is better
    - **Fixing identified issues** that all judges caught
@@ -447,6 +498,21 @@ Let's think through this synthesis step by step to create the best possible comb
 CRITICAL: Do not create something entirely new. Synthesize the best from what exists.
 ```
 
+### Phase 4: Cleanup
+
+After the final solution is produced, clean up the team:
+
+```
+SendMessage(to: "generator-a", message: "All tasks complete. Please shut down.")
+SendMessage(to: "generator-b", message: "All tasks complete. Please shut down.")
+SendMessage(to: "generator-c", message: "All tasks complete. Please shut down.")
+SendMessage(to: "judge-1", message: "All tasks complete. Please shut down.")
+SendMessage(to: "judge-2", message: "All tasks complete. Please shut down.")
+SendMessage(to: "judge-3", message: "All tasks complete. Please shut down.")
+# Also send to synthesizer/polisher if spawned
+TeamDelete()
+```
+
 <output>
 The command produces different outputs depending on the adaptive strategy selected:
 
@@ -475,9 +541,9 @@ Strategy Used: {strategy} ({reason})
 
 ### Results
 
-| Phase                   | Agents | Models   | Status      |
-|-------------------------|--------|----------|-------------|
-| Phase [N]: [phase name] | [N]    | [model] × 3 | [✅ Complete / ❌ Failed] |
+| Phase                   | Teammates | Models   | Status      |
+|-------------------------|-----------|----------|-------------|
+| Phase [N]: [phase name] | [N]       | [model] x 3 | [Complete / Failed] |
 
 Files Created
 
@@ -531,18 +597,19 @@ Choose 3-5 weighted criteria relevant to the task:
 
 ### Common Pitfalls
 
-❌ **Using for trivial tasks** - Overhead not justified
-❌ **Vague task descriptions** - Leads to incomparable solutions
-❌ **Insufficient context** - Agents can't produce quality work
-❌ **Weak evaluation criteria** - Judges can't differentiate quality
-❌ **Forcing synthesis when clear winner exists** - Wastes cost and risks degrading quality
-❌ **Synthesizing fundamentally flawed solutions** - Better to redesign than polish garbage
+- **Using for trivial tasks** - Overhead not justified
+- **Vague task descriptions** - Leads to incomparable solutions
+- **Insufficient context** - Teammates can't produce quality work
+- **Weak evaluation criteria** - Judges can't differentiate quality
+- **Forcing synthesis when clear winner exists** - Wastes cost and risks degrading quality
+- **Synthesizing fundamentally flawed solutions** - Better to redesign than polish garbage
 
-✅ **Well-defined task with clear constraints**
-✅ **Rich context for informed decisions**
-✅ **Specific, measurable evaluation criteria**
-✅ **Trust adaptive strategy selection**
-✅ **Polish clear winners, synthesize split decisions, redesign failures**
+**Do instead:**
+- Well-defined task with clear constraints
+- Rich context for informed decisions
+- Specific, measurable evaluation criteria
+- Trust adaptive strategy selection
+- Polish clear winners, synthesize split decisions, redesign failures
 
 ## Examples
 
@@ -552,6 +619,18 @@ Choose 3-5 weighted criteria relevant to the task:
 /do-competitively "Design REST API for user management (CRUD + auth)" \
   --output "specs/api/users.md" \
   --criteria "RESTfulness,security,scalability,developer-experience"
+```
+
+**Phase 1 — Team Setup and Generation:**
+
+```
+TeamCreate("competitive-users-api", "Competitive API design for user management")
+TaskCreate("Generate solution A", "...")
+TaskCreate("Generate solution B", "...")
+TaskCreate("Generate solution C", "...")
+Agent(prompt: ..., team_name: "competitive-users-api", name: "generator-a")
+Agent(prompt: ..., team_name: "competitive-users-api", name: "generator-b")
+Agent(prompt: ..., team_name: "competitive-users-api", name: "generator-c")
 ```
 
 **Phase 1 outputs:**
@@ -601,7 +680,7 @@ Choose 3-5 weighted criteria relevant to the task:
 - `specs/api/users.md` - Solution A polished with:
   - Added rate limiting documentation (from B)
   - Simplified nested routes (judge feedback)
-  - Total cost: 6 agents (saved 1 from full synthesis)
+  - Total cost: 7 teammates (3 generators + 3 judges + 1 polisher)
 
 ### Example 2: Algorithm Selection (Split Decision - FULL_SYNTHESIS)
 
@@ -652,7 +731,7 @@ Choose 3-5 weighted criteria relevant to the task:
 - Average scores: A=3.8, B=4.0, C=3.9
 - Score gap: 4.0 - 3.9 = 0.1 (<1.0 threshold)
 - Strategy: FULL_SYNTHESIS
-- Reason: Split decision, all solutions ≥3.0, no clear winner
+- Reason: Split decision, all solutions >=3.0, no clear winner
 
 **Phase 3 output:**
 
@@ -660,7 +739,7 @@ Choose 3-5 weighted criteria relevant to the task:
   - Multi-tier architecture (from B)
   - Simple LRU policy (from A)
   - CDN for static content (from C)
-  - Total cost: 7 agents (full synthesis needed)
+  - Total cost: 7 teammates (3 generators + 3 judges + 1 synthesizer)
 
 ### Example 3: Authentication Design (All Flawed - REDESIGN)
 

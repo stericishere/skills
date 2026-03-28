@@ -1,17 +1,17 @@
 ---
 name: sadd:tree-of-thoughts
-description: Execute tasks through systematic exploration, pruning, and expansion using Tree of Thoughts methodology with multi-agent evaluation
+description: Execute tasks through systematic exploration, pruning, and expansion using Tree of Thoughts methodology with agent team coordination
 argument-hint: Task description and optional output path/criteria
 ---
 
 # tree-of-thoughts
 
 <task>
-Execute complex reasoning tasks through systematic exploration of solution space, pruning unpromising branches, expanding viable approaches, and synthesizing the best solution.
+Execute complex reasoning tasks through systematic exploration of solution space, pruning unpromising branches, expanding viable approaches, and synthesizing the best solution using coordinated agent teams.
 </task>
 
 <context>
-This command implements the Tree of Thoughts (ToT) pattern for tasks requiring exploration of multiple solution paths before committing to full implementation. It combines creative sampling, multi-perspective evaluation, adaptive strategy selection, and evidence-based synthesis to produce superior outcomes.
+This command implements the Tree of Thoughts (ToT) pattern for tasks requiring exploration of multiple solution paths before committing to full implementation. It uses the Agent Teams API to coordinate teammates through shared task lists and inter-agent messaging, combining creative sampling, multi-perspective evaluation, adaptive strategy selection, and evidence-based synthesis to produce superior outcomes.
 </context>
 
 ## Pattern: Tree of Thoughts (ToT)
@@ -20,9 +20,9 @@ This command implements a six-phase systematic reasoning pattern with adaptive s
 
 ```
 Phase 1: Exploration (Propose Approaches)
-         ┌─ Agent A → Proposals A1, A2 (with probabilities) ─┐
-Task ───┼─ Agent B → Proposals B1, B2 (with probabilities) ─┼─┐
-         └─ Agent C → Proposals C1, C2 (with probabilities) ─┘ │
+         ┌─ Teammate A → Proposals A1, A2 (with probabilities) ─┐
+Task ───┼─ Teammate B → Proposals B1, B2 (with probabilities) ─┼─┐
+         └─ Teammate C → Proposals C1, C2 (with probabilities) ─┘ │
                                                                 │
 Phase 2: Pruning (Vote for Best 3)                             │
          ┌─ Judge 1 → Votes + Rationale ─┐                     │
@@ -32,9 +32,9 @@ Phase 2: Pruning (Vote for Best 3)                             │
                  ├─→ Select Top 3 Proposals                     │
                  │                                              │
 Phase 3: Expansion (Develop Full Solutions)                    │
-         ┌─ Agent A → Solution A (from proposal X) ─┐          │
-         ├─ Agent B → Solution B (from proposal Y) ─┼──────────┤
-         └─ Agent C → Solution C (from proposal Z) ─┘          │
+         ┌─ Teammate A → Solution A (from proposal X) ─┐          │
+         ├─ Teammate B → Solution B (from proposal Y) ─┼──────────┤
+         └─ Teammate C → Solution C (from proposal Z) ─┘          │
                                                                 │
 Phase 4: Evaluation (Judge Full Solutions)                     │
          ┌─ Judge 1 → Report 1 ─┐                              │
@@ -53,12 +53,19 @@ Phase 5: Synthesis (Only if FULL_SYNTHESIS)                    │
 
 ## Process
 
-### Setup: Create Directory Structure
+### Setup: Create Directory Structure and Agent Team
 
-Before starting, ensure the directory structure exists:
+Before starting, ensure the directory structure exists and create the team:
 
 ```bash
 mkdir -p .specs/research .specs/reports
+```
+
+```
+TeamCreate(
+  team_name: "tot-{solution-name}",
+  description: "Tree of Thoughts exploration and synthesis for '{task}'"
+)
 ```
 
 **Naming conventions:**
@@ -75,14 +82,28 @@ Where:
 
 ### Phase 1: Exploration (Propose Approaches)
 
-Launch **3 independent agents in parallel** (recommended: Sonnet for speed):
+**Step 1: Create exploration tasks in the shared task list**
 
-1. Each agent receives **identical task description and context**
-2. Each agent **generates 6 high-level approaches** (not full implementations)
-3. For each approach, agent provides:
+```
+TaskCreate(title: "Explore proposals set A for {task}", description: "...")
+TaskCreate(title: "Explore proposals set B for {task}", description: "...")
+TaskCreate(title: "Explore proposals set C for {task}", description: "...")
+```
+
+**Step 2: Launch 3 independent teammates in parallel** (recommended: Sonnet for speed):
+
+```
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "explorer-a")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "explorer-b")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "explorer-c")
+```
+
+1. Each teammate receives **identical task description and context**
+2. Each teammate **generates 6 high-level approaches** (not full implementations)
+3. For each approach, teammate provides:
    - **Approach description** (2-3 paragraphs)
    - **Key design decisions** and trade-offs
-   - **Probability estimate** (0.0-1.0) 
+   - **Probability estimate** (0.0-1.0)
    - **Estimated complexity** (low/medium/high)
    - **Potential risks** and failure modes
 4. Proposals saved to `.specs/research/{solution-name}-{date}.proposals.[a|b|c].md`
@@ -105,7 +126,7 @@ Launch **3 independent agents in parallel** (recommended: Sonnet for speed):
 </context>
 
 <output>
-{.specs/research/{solution-name}-{date}.proposals.[a|b|c].md - each agent gets unique letter identifier}
+{.specs/research/{solution-name}-{date}.proposals.[a|b|c].md - each teammate gets unique letter identifier}
 </output>
 
 Instructions:
@@ -155,7 +176,21 @@ CRITICAL:
 
 ### Phase 2: Pruning (Vote for Top 3 Candidates)
 
-Launch **3 independent judges in parallel** (recommended: Sonnet for efficiency):
+**Step 1: Create pruning tasks in the shared task list**
+
+```
+TaskCreate(title: "Prune proposals — Judge 1", description: "...")
+TaskCreate(title: "Prune proposals — Judge 2", description: "...")
+TaskCreate(title: "Prune proposals — Judge 3", description: "...")
+```
+
+**Step 2: Launch 3 independent judge teammates in parallel** (recommended: Sonnet for efficiency):
+
+```
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "pruner-1")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "pruner-2")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "pruner-3")
+```
 
 1. Each judge receives **ALL proposal files** (from `.specs/research/`)
 2. Judges evaluate each proposal against **pruning criteria**:
@@ -240,13 +275,27 @@ After judges complete voting:
 
 ### Phase 3: Expansion (Develop Full Solutions)
 
-Launch **3 independent agents in parallel** (recommended: Opus for quality):
+**Step 1: Create expansion tasks in the shared task list**
 
-1. Each agent receives:
+```
+TaskCreate(title: "Expand proposal X into full solution A", description: "...")
+TaskCreate(title: "Expand proposal Y into full solution B", description: "...")
+TaskCreate(title: "Expand proposal Z into full solution C", description: "...")
+```
+
+**Step 2: Launch 3 independent teammates in parallel** (recommended: Opus for quality):
+
+```
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "expander-a")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "expander-b")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "expander-c")
+```
+
+1. Each teammate receives:
    - **One selected proposal** to expand
    - **Original task description** and context
    - **Judge feedback** from pruning phase (concerns, questions)
-2. Agent produces **complete solution** implementing the proposal:
+2. Teammate produces **complete solution** implementing the proposal:
    - Full implementation details
    - Addresses concerns raised by judges
    - Documents key decisions made during expansion
@@ -254,7 +303,7 @@ Launch **3 independent agents in parallel** (recommended: Opus for quality):
 
 **Key principle:** Focused development of validated approaches with awareness of evaluation feedback.
 
-**Prompt template for expansion agents:**
+**Prompt template for expansion teammates:**
 
 ```markdown
 You are developing a full solution based on a selected proposal.
@@ -264,7 +313,7 @@ You are developing a full solution based on a selected proposal.
 </task>
 
 <selected_proposal>
-{write selected proposal EXACTLY as it is. Including all details provided by the agent}
+{write selected proposal EXACTLY as it is. Including all details provided by the teammate}
 Read this carefully - it is your starting point.
 </selected_proposal>
 
@@ -344,7 +393,21 @@ CRITICAL:
 
 ### Phase 4: Evaluation (Judge Full Solutions)
 
-Launch **3 independent judges in parallel** (recommended: Opus for rigor):
+**Step 1: Create evaluation tasks in the shared task list**
+
+```
+TaskCreate(title: "Evaluate full solutions — Judge 1", description: "...")
+TaskCreate(title: "Evaluate full solutions — Judge 2", description: "...")
+TaskCreate(title: "Evaluate full solutions — Judge 3", description: "...")
+```
+
+**Step 2: Launch 3 independent judge teammates in parallel** (recommended: Opus for rigor):
+
+```
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "eval-judge-1")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "eval-judge-2")
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "eval-judge-3")
+```
 
 1. Each judge receives **ALL solution files** (solution.a.md, solution.b.md, solution.c.md)
 2. Judges evaluate against **final criteria** (task-specific):
@@ -431,7 +494,7 @@ Final checklist:
 
 ### Phase 4.5: Adaptive Strategy Selection (Early Return)
 
-**The orchestrator** (not a subagent) analyzes judge outputs to determine the optimal strategy.
+**The orchestrator** (not a teammate) analyzes judge outputs to determine the optimal strategy.
 
 #### Decision Logic
 
@@ -470,9 +533,10 @@ If none of the above conditions met:
 
 **Process:**
 1. Select the winning solution as the base
-2. Launch subagent to apply specific improvements from judge feedback
-3. Cherry-pick 1-2 best elements from runner-up solutions
-4. Document what was added and why
+2. Create a polish task: `TaskCreate(title: "Polish winning solution", description: "...")`
+3. Launch teammate to apply specific improvements from judge feedback
+4. Cherry-pick 1-2 best elements from runner-up solutions
+5. Document what was added and why
 
 **Benefits:**
 - Saves synthesis cost (simpler than full synthesis)
@@ -556,8 +620,9 @@ CRITICAL: Preserve the winning solution's core approach. Make targeted improveme
 **When:** All solutions scored <3.0/5.0 (fundamental issues across the board)
 
 **Process:**
-1. Launch new agent to analyze the failure modes and lessons learned
-2. **Return to Phase 3** (Expansion), provide to new implementation agents the lessons learned and new constraints
+1. Create a redesign task: `TaskCreate(title: "Analyze failures and redesign", description: "...")`
+2. Launch new teammate to analyze the failure modes and lessons learned
+3. **Return to Phase 3** (Expansion), provide to new implementation teammates the lessons learned and new constraints
 
 **Note:** If redesign fails twice, escalate to user for guidance.
 
@@ -626,7 +691,7 @@ Let's break this down systematically to understand what went wrong and how to de
 
 #### Strategy 3: FULL_SYNTHESIS (Default)
 
-**When:** No clear winner AND solutions have merit (scores ≥3.0)
+**When:** No clear winner AND solutions have merit (scores >=3.0)
 
 **Process:** Proceed to Phase 5 (Evidence-Based Synthesis)
 
@@ -634,17 +699,27 @@ Let's break this down systematically to understand what went wrong and how to de
 
 **Only executed when Strategy 3 (FULL_SYNTHESIS) selected in Phase 4.5**
 
-Launch **1 synthesis agent** (recommended: Opus for quality):
+**Step 1: Create synthesis task**
 
-1. Agent receives:
+```
+TaskCreate(title: "Synthesize best solution from candidates", description: "...")
+```
+
+**Step 2: Launch 1 synthesis teammate** (recommended: Opus for quality):
+
+```
+Agent(prompt: ..., team_name: "tot-{solution-name}", name: "synthesizer")
+```
+
+1. Teammate receives:
    - **All solutions** (from specified output location)
    - **All evaluation reports** (from `.specs/reports/`)
    - **Selection rationale** from pruning phase (from `.specs/research/`)
-2. Agent analyzes:
+2. Teammate analyzes:
    - **Consensus strengths** (what multiple judges praised)
    - **Consensus weaknesses** (what multiple judges criticized)
    - **Complementary elements** where solutions took different approaches
-3. Agent produces **final solution** by:
+3. Teammate produces **final solution** by:
    - **Copying superior sections** when one solution clearly wins
    - **Combining approaches** when hybrid is better
    - **Fixing identified issues** that judges caught
@@ -753,6 +828,27 @@ CRITICAL:
 - Address all consensus weaknesses identified by judges
 ```
 
+### Phase 6: Cleanup
+
+After the final solution is produced, shut down all teammates and delete the team:
+
+```
+SendMessage(to: "explorer-a", message: "All tasks complete. Please shut down.")
+SendMessage(to: "explorer-b", message: "All tasks complete. Please shut down.")
+SendMessage(to: "explorer-c", message: "All tasks complete. Please shut down.")
+SendMessage(to: "pruner-1", message: "All tasks complete. Please shut down.")
+SendMessage(to: "pruner-2", message: "All tasks complete. Please shut down.")
+SendMessage(to: "pruner-3", message: "All tasks complete. Please shut down.")
+SendMessage(to: "expander-a", message: "All tasks complete. Please shut down.")
+SendMessage(to: "expander-b", message: "All tasks complete. Please shut down.")
+SendMessage(to: "expander-c", message: "All tasks complete. Please shut down.")
+SendMessage(to: "eval-judge-1", message: "All tasks complete. Please shut down.")
+SendMessage(to: "eval-judge-2", message: "All tasks complete. Please shut down.")
+SendMessage(to: "eval-judge-3", message: "All tasks complete. Please shut down.")
+# Also send to synthesizer/polisher if spawned
+TeamDelete()
+```
+
 <output>
 The command produces different outputs depending on the adaptive strategy selected:
 
@@ -810,20 +906,21 @@ The command produces different outputs depending on the adaptive strategy select
 
 ### Common Pitfalls
 
-❌ **Insufficient exploration** - Agents propose similar approaches
-❌ **Weak pruning criteria** - Judges can't differentiate quality
-❌ **Ignoring judge feedback** - Expansion ignores concerns from pruning
-❌ **Vague proposals** - Can't properly evaluate without implementation details
-❌ **Over-exploration** - Too many proposals, evaluation becomes expensive
-❌ **Forcing synthesis when clear winner exists** - Wastes cost and risks degrading quality
-❌ **Synthesizing fundamentally flawed solutions** - Better to redesign than polish garbage
+- **Insufficient exploration** - Teammates propose similar approaches
+- **Weak pruning criteria** - Judges can't differentiate quality
+- **Ignoring judge feedback** - Expansion ignores concerns from pruning
+- **Vague proposals** - Can't properly evaluate without implementation details
+- **Over-exploration** - Too many proposals, evaluation becomes expensive
+- **Forcing synthesis when clear winner exists** - Wastes cost and risks degrading quality
+- **Synthesizing fundamentally flawed solutions** - Better to redesign than polish garbage
 
-✅ **Encourage diverse exploration** - Prompt for different regions of solution space
-✅ **Clear pruning criteria** - Specific, measurable evaluation dimensions
-✅ **Feed feedback forward** - Expansion agents address pruning concerns
-✅ **Right level of detail** - Proposals have enough detail to evaluate
-✅ **Prune aggressively** - Only expand most promising 3 approaches
-✅ **Trust adaptive strategy selection** - Polish clear winners, synthesize split decisions, redesign failures
+**Do instead:**
+- Encourage diverse exploration - Prompt for different regions of solution space
+- Clear pruning criteria - Specific, measurable evaluation dimensions
+- Feed feedback forward - Expansion teammates address pruning concerns
+- Right level of detail - Proposals have enough detail to evaluate
+- Prune aggressively - Only expand most promising 3 approaches
+- Trust adaptive strategy selection - Polish clear winners, synthesize split decisions, redesign failures
 
 ## Example: API Design
 
@@ -831,6 +928,11 @@ The command produces different outputs depending on the adaptive strategy select
 /tree-of-thoughts "Design REST API for user management (CRUD + auth)" \
   --output "specs/api/users.md" \
   --criteria "RESTfulness,security,scalability,developer-experience"
+```
+
+**Setup:**
+```
+TeamCreate("tot-users-api", "Tree of Thoughts for REST API user management design")
 ```
 
 **Phase 1 outputs** (assuming date 2025-01-15):
@@ -873,10 +975,17 @@ The command produces different outputs depending on the adaptive strategy select
 
 **Phase 4.5 decision (orchestrator parses headers):**
 - Split votes: A, B, A (no unanimous winner)
-- Average scores: A=4.1, B=3.8, C=3.4 (all ≥3.0)
+- Average scores: A=4.1, B=3.8, C=3.4 (all >=3.0)
 - Strategy: FULL_SYNTHESIS
 - Reason: Split decision with merit, synthesis needed
 
 **Phase 5 output (synthesis):**
 - `specs/api/users.md` - Resource-based structure (from A), max 2-level nesting (from B), internal services (from C)
 
+**Cleanup:**
+```
+SendMessage(to: each teammate, message: "All tasks complete. Please shut down.")
+TeamDelete()
+```
+
+</output>

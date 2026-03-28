@@ -62,3 +62,5 @@ All sub-skills at `~/.claude/skills/pm/<name>/GUIDE.md`. Read the matching guide
 |---------|--------|
 | Removing AI writing patterns from PRDs, press releases, comms | Read `~/.claude/skills/humanizer/SKILL.md` |
 | Co-authoring PRDs, decision docs, specs, proposals with structured workflow | Read `~/.claude/skills/doc-coauthoring/SKILL.md` |
+| Business model diagnosis, 问题消解, validate if business makes sense | Read `~/.claude/skills/dbs-diagnosis/SKILL.md` |
+| Concept deconstruction, 拆概念, clarify fuzzy business terms | Read `~/.claude/skills/dbs-deconstruct/SKILL.md` |

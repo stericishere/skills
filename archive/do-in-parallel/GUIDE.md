@@ -1,17 +1,17 @@
 ---
 name: sadd:do-in-parallel
-description: Launch multiple sub-agents in parallel to execute tasks across files or targets with intelligent model selection and quality-focused prompting
+description: Launch multiple teammates in parallel to execute tasks across files or targets with intelligent model selection and quality-focused prompting
 argument-hint: Task description [--files "file1.ts,file2.ts,..."] [--targets "target1,target2,..."] [--model opus|sonnet|haiku] [--output <path>]
 ---
 
 # do-in-parallel
 
 <task>
-Launch multiple sub-agents in parallel to execute the same task across different files or targets. Analyze the task to intelligently select the optimal model, generate quality-focused prompts with Zero-shot Chain-of-Thought reasoning and mandatory self-critique, then dispatch all agents simultaneously and collect results.
+Launch multiple teammates in parallel to execute the same task across different files or targets. Analyze the task to intelligently select the optimal model, generate quality-focused prompts with Zero-shot Chain-of-Thought reasoning and mandatory self-critique, then dispatch all teammates simultaneously via an agent team and collect results.
 </task>
 
 <context>
-This command implements the **Supervisor/Orchestrator pattern** with parallel dispatch. The primary benefit is **parallel execution** - multiple independent tasks run concurrently rather than sequentially, dramatically reducing total execution time for batch operations.
+This command implements the **Supervisor/Orchestrator pattern** with parallel dispatch via the Agent Teams API. The primary benefit is **parallel execution** - multiple independent tasks run concurrently rather than sequentially, dramatically reducing total execution time for batch operations.
 
 **Common use cases:**
 - Apply the same refactoring across multiple files
@@ -91,11 +91,11 @@ Verify tasks are truly independent before proceeding:
 - [ ] No shared mutable state
 - [ ] No database transactions spanning targets
 
-If ANY check fails: STOP and inform user why parallelization is unsafe. Recommend `/launch-sub-agent` for sequential execution.
+If ANY check fails: STOP and inform user why parallelization is unsafe. Recommend sequential execution instead.
 
 ### Phase 3: Model and Agent Selection
 
-Select the optimal model and specialized agent based on task analysis. **Same configuration for all parallel agents** (ensures consistent quality):
+Select the optimal model and specialized agent based on task analysis. **Same configuration for all parallel teammates** (ensures consistent quality):
 
 #### 3.1 Model Selection
 
@@ -112,28 +112,28 @@ Select the optimal model and specialized agent based on task analysis. **Same co
 ```
 Is EACH target's task COMPLEX (architecture, novel problem, critical decision)?
 |
-+-- YES --> Use Opus for ALL agents
++-- YES --> Use Opus for ALL teammates
 |
 +-- NO --> Is task SIMPLE and MECHANICAL (rename, format, extract)?
            |
-           +-- YES --> Use Haiku for ALL agents
+           +-- YES --> Use Haiku for ALL teammates
            |
            +-- NO --> Is output LARGE but task not complex?
                       |
-                      +-- YES --> Use Sonnet for ALL agents
+                      +-- YES --> Use Sonnet for ALL teammates
                       |
-                      +-- NO --> Use Opus for ALL agents (default)
+                      +-- NO --> Use Opus for ALL teammates (default)
 ```
 
 #### 3.2 Specialized Agent Selection (Optional)
 
-If the task matches a specialized domain, include the relevant agent prompt in ALL parallel agents. Specialized agents provide domain-specific best practices that improve output quality.
+If the task matches a specialized domain, include the relevant agent prompt in ALL parallel teammates. Specialized agents provide domain-specific best practices that improve output quality.
 
 **Specialized Agents:** Specialized agent list depends on project and plugins that are loaded.
 
 **Decision:** Use specialized agent when:
 - Task clearly benefits from domain expertise
-- Consistency across all parallel agents is important
+- Consistency across all parallel teammates is important
 - Task is NOT trivial (overhead not justified for simple tasks)
 
 Skip specialized agent when:
@@ -252,54 +252,83 @@ If ANY verification reveals a gap:
 CRITICAL: Do not submit until ALL verification questions have satisfactory answers.
 ```
 
-### Phase 5: Parallel Dispatch
+### Phase 5: Team Setup and Parallel Dispatch
 
-Launch all sub-agents simultaneously using the Task tool.
+Create an agent team and launch all teammates simultaneously.
 
-**CRITICAL: Parallel Dispatch Pattern**
+**CRITICAL: Agent Teams Dispatch Pattern**
 
-Launch ALL agents in a SINGLE response. Do NOT wait for one agent to complete before starting another:
+**Step 1: Create the team**
 
-```markdown
-## Dispatching 3 parallel tasks
-
-[Task 1]
-Use Task tool:
-  description: "Parallel: simplify error handling in src/services/user.ts"
-  prompt: [CoT prefix + task body for user.ts + critique suffix]
-  model: sonnet
-
-[Task 2]
-Use Task tool:
-  description: "Parallel: simplify error handling in src/services/order.ts"
-  prompt: [CoT prefix + task body for order.ts + critique suffix]
-  model: sonnet
-
-[Task 3]
-Use Task tool:
-  description: "Parallel: simplify error handling in src/services/payment.ts"
-  prompt: [CoT prefix + task body for payment.ts + critique suffix]
-  model: sonnet
-
-[All 3 tasks launched simultaneously - results collected when all complete]
+```
+TeamCreate(
+  team_name: "parallel-{task-slug}",
+  description: "Parallel execution of '{task}' across {N} targets"
+)
 ```
 
+**Step 2: Create tasks in the shared task list**
+
+For each target, create a task:
+
+```
+TaskCreate(
+  title: "Parallel: {task summary} in {target}",
+  description: "{CoT prefix + task body for target + critique suffix}"
+)
+```
+
+**Step 3: Spawn teammates — ALL in a SINGLE response**
+
+Launch ALL teammates in a SINGLE response. Do NOT wait for one teammate to complete before starting another:
+
+```markdown
+## Dispatching 3 parallel teammates
+
+[Teammate 1]
+Agent(
+  prompt: [CoT prefix + task body for target_1 + critique suffix],
+  team_name: "parallel-{task-slug}",
+  name: "worker-1"
+)
+
+[Teammate 2]
+Agent(
+  prompt: [CoT prefix + task body for target_2 + critique suffix],
+  team_name: "parallel-{task-slug}",
+  name: "worker-2"
+)
+
+[Teammate 3]
+Agent(
+  prompt: [CoT prefix + task body for target_3 + critique suffix],
+  team_name: "parallel-{task-slug}",
+  name: "worker-3"
+)
+
+[All 3 teammates launched simultaneously - results collected when all complete]
+```
+
+**Step 4: Monitor progress**
+
+Use `TaskList` to check progress of all tasks in the team. Teammates self-claim unassigned tasks and mark them complete via `TaskUpdate(task_id, status: "completed")`.
+
 **Parallelization Guidelines:**
-- Launch ALL independent tasks in a single batch (same response)
-- Do NOT wait for one task before starting another
-- Do NOT make sequential Task tool calls
-- Task tool handles parallelization automatically
+- Launch ALL independent teammates in a single batch (same response)
+- Do NOT wait for one teammate before starting another
+- Do NOT make sequential Agent tool calls
+- Agent Teams API handles parallelization automatically
 - Results collected after all complete
 
 **Context Isolation (IMPORTANT):**
 - Pass only context relevant to each specific target
-- Do NOT pass the full list of all targets to each agent
-- Let sub-agents discover local patterns through file reading
-- Each agent works in clean context without accumulated confusion
+- Do NOT pass the full list of all targets to each teammate
+- Let teammates discover local patterns through file reading
+- Each teammate works in clean context without accumulated confusion
 
-### Phase 6: Collect and Summarize Results
+### Phase 6: Collect, Summarize, and Cleanup
 
-After all agents complete, aggregate results:
+After all teammates complete, aggregate results:
 
 ```markdown
 ## Parallel Execution Summary
@@ -307,14 +336,15 @@ After all agents complete, aggregate results:
 ### Configuration
 - **Task:** {task description}
 - **Model:** {selected model}
+- **Team:** parallel-{task-slug}
 - **Targets:** {count} items
 
 ### Results
 
-| Target | Model | Status | Summary |
-|--------|-------|--------|---------|
-| {target_1} | {model} | SUCCESS/FAILED | {brief outcome} |
-| {target_2} | {model} | SUCCESS/FAILED | {brief outcome} |
+| Target | Teammate | Status | Summary |
+|--------|----------|--------|---------|
+| {target_1} | worker-1 | SUCCESS/FAILED | {brief outcome} |
+| {target_2} | worker-2 | SUCCESS/FAILED | {brief outcome} |
 | ... | ... | ... | ... |
 
 ### Overall Assessment
@@ -332,11 +362,22 @@ After all agents complete, aggregate results:
 {If any failures, suggest remediation}
 ```
 
+**Step 5: Clean up the team**
+
+After collecting results, shut down teammates and delete the team:
+
+```
+SendMessage(to: "worker-1", message: "All tasks complete. Please shut down.")
+SendMessage(to: "worker-2", message: "All tasks complete. Please shut down.")
+SendMessage(to: "worker-3", message: "All tasks complete. Please shut down.")
+TeamDelete()
+```
+
 **Failure Handling:**
 - Report failed tasks clearly with error details
 - Successful tasks are NOT affected by failures
 - Do NOT retry automatically (let user decide)
-- Suggest re-running failed targets with `/launch-sub-agent`
+- Suggest re-running failed targets individually
 
 ## Examples
 
@@ -356,7 +397,7 @@ After all agents complete, aggregate results:
 
 **Model Selection:** Sonnet (pattern-based, medium complexity)
 
-**Dispatch:** 3 parallel agents, one per file
+**Dispatch:** 3 parallel teammates, one per file
 
 **Result:**
 ```markdown
@@ -369,11 +410,11 @@ After all agents complete, aggregate results:
 
 ### Results
 
-| Target | Model | Status | Summary |
-|--------|-------|--------|---------|
-| src/services/user.ts | sonnet | SUCCESS | Converted 4 nested if-else blocks to early returns |
-| src/services/order.ts | sonnet | SUCCESS | Converted 6 nested if-else blocks to early returns |
-| src/services/payment.ts | sonnet | SUCCESS | Converted 3 nested if-else blocks to early returns |
+| Target | Teammate | Status | Summary |
+|--------|----------|--------|---------|
+| src/services/user.ts | worker-1 | SUCCESS | Converted 4 nested if-else blocks to early returns |
+| src/services/order.ts | worker-2 | SUCCESS | Converted 6 nested if-else blocks to early returns |
+| src/services/payment.ts | worker-3 | SUCCESS | Converted 3 nested if-else blocks to early returns |
 
 ### Overall Assessment
 - **Completed:** 3/3
@@ -398,7 +439,7 @@ After all agents complete, aggregate results:
 
 **Model Selection:** Haiku (mechanical, well-defined rules)
 
-**Dispatch:** 4 parallel agents
+**Dispatch:** 4 parallel teammates
 
 ---
 
@@ -418,7 +459,7 @@ After all agents complete, aggregate results:
 
 **Model Selection:** Opus (security-critical, requires deep analysis)
 
-**Dispatch:** 3 parallel agents
+**Dispatch:** 3 parallel teammates
 
 ---
 
@@ -438,7 +479,7 @@ After all agents complete, aggregate results:
 
 **Model Selection:** Sonnet (pattern-based, extensive output)
 
-**Dispatch:** 4 parallel agents
+**Dispatch:** 4 parallel teammates
 
 ---
 
@@ -457,7 +498,7 @@ After all agents complete, aggregate results:
 
 **Model Selection:** Haiku (simple, mechanical)
 
-**Dispatch:** 3 parallel agents
+**Dispatch:** 3 parallel teammates
 
 ## Best Practices
 
@@ -481,14 +522,14 @@ After all agents complete, aggregate results:
 
 ### Context Isolation
 
-- **Minimal context:** Each sub-agent gets only what it needs
-- **No cross-references:** Don't tell Agent A about Agent B's target
-- **Let them discover:** Sub-agents read files to understand patterns
+- **Minimal context:** Each teammate gets only what it needs
+- **No cross-references:** Don't tell Teammate A about Teammate B's target
+- **Let them discover:** Teammates read files to understand patterns
 - **File system as truth:** Changes are coordinated through the filesystem
 
 ### Quality Assurance
 
-- **Self-critique is mandatory:** Every sub-agent must verify its work
+- **Self-critique is mandatory:** Every teammate must verify its work
 - **Review the summary:** Check for failed or partial completions
 - **Run tests after:** Parallel changes may have subtle interactions
 - **Commit atomically:** All changes from one batch = one commit
@@ -497,7 +538,7 @@ After all agents complete, aggregate results:
 
 | Failure Type | Description | Recovery Action |
 |--------------|-------------|-----------------|
-| **Recoverable** | Sub-agent made a mistake but approach is sound | Retry step with corrected prompt (max 1 retry) |
+| **Recoverable** | Teammate made a mistake but approach is sound | Retry step with corrected prompt (max 1 retry) |
 | **Approach Failure** | The approach for this step is wrong | Escalate to user with options |
 | **Foundation Issue** | Previous step output is insufficient | May need to revisit earlier step |
 

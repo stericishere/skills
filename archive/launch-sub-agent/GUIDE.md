@@ -1,24 +1,24 @@
 ---
-name: sadd:launch-sub-agent
-description: Launch an intelligent sub-agent with automatic model selection based on task complexity, specialized agent matching, Zero-shot CoT reasoning, and mandatory self-critique verification
+name: sadd:launch-teammate
+description: Launch an intelligent teammate with automatic model selection based on task complexity, specialized agent matching, Zero-shot CoT reasoning, and mandatory self-critique verification using Agent Teams
 argument-hint: Task description (e.g., "Implement user authentication" or "Research caching strategies") [--model opus|sonnet|haiku] [--agent <agent-name>] [--output <path>]
 ---
 
-# launch-sub-agent
+# launch-teammate
 
 <task>
-Launch a focused sub-agent to execute the provided task. Analyze the task to intelligently select the optimal model and agent configuration, then dispatch a sub-agent with Zero-shot Chain-of-Thought reasoning at the beginning and mandatory self-critique verification at the end.
+Launch a focused teammate to execute the provided task. Analyze the task to intelligently select the optimal model and agent configuration, then spawn a teammate via the Agent Teams API with Zero-shot Chain-of-Thought reasoning at the beginning and mandatory self-critique verification at the end.
 </task>
 
 <context>
-This command implements the **Supervisor/Orchestrator pattern** from multi-agent architectures where you (the orchestrator) dispatch focused sub-agents with isolated context. The primary benefit is **context isolation** - each sub-agent operates in a clean context window focused on its specific task without accumulated context pollution.
+This command implements the **Agent Teams pattern** where you (the team lead) create a team, spawn a focused teammate with isolated context. The primary benefit is **context isolation** - each teammate operates in a clean context window focused on its specific task without accumulated context pollution. The Agent Teams API provides shared task tracking and inter-agent communication via SendMessage.
 </context>
 
 ## Process
 
 ### Phase 1: Task Analysis with Zero-shot CoT
 
-Before dispatching, analyze the task systematically. Think through step by step:
+Before spawning the teammate, analyze the task systematically. Think through step by step:
 
 ```
 Let me analyze this task step by step to determine the optimal configuration:
@@ -105,12 +105,12 @@ If the task matches a specialized domain, incorporate the relevant agent prompt.
 **Usage:**
 
 1. Read the agent definition
-2. Include the agent's instructions in the sub-agent prompt AFTER the CoT prefix
+2. Include the agent's instructions in the teammate prompt AFTER the CoT prefix
 3. Combine with Zero-shot CoT prefix and Critique suffix
 
-### Phase 4: Construct Sub-Agent Prompt
+### Phase 4: Construct Teammate Prompt
 
-Build the sub-agent prompt with these mandatory components:
+Build the teammate prompt with these mandatory components:
 
 #### 4.1 Zero-shot Chain-of-Thought Prefix (REQUIRED - MUST BE FIRST)
 
@@ -220,24 +220,46 @@ If ANY verification question reveals a gap:
 CRITICAL: Do not submit until ALL verification questions have satisfactory answers with evidence.
 ```
 
-### Phase 5: Dispatch Sub-Agent
+### Phase 5: Create Team and Spawn Teammate
 
-Use the Task tool to dispatch with the selected configuration:
+Set up the team and spawn the teammate with the selected configuration:
 
 ```
-Use Task tool:
-- description: "Sub-agent: {brief task summary}"
-- prompt: {constructed prompt with CoT prefix + task + critique suffix}
-- model: {selected model - opus/sonnet/haiku}
+1. TeamCreate("launch-teammate-{task-name}", "Focused task execution: {task summary}")
+   → Creates team config at ~/.claude/teams/{name}/config.json
+   → Creates task directory at ~/.claude/tasks/{name}/
+
+2. TaskCreate(
+     title: "{brief task summary}",
+     description: "{task description with requirements}"
+   )
+
+3. Agent(
+     prompt: {constructed prompt with CoT prefix + task + critique suffix},
+     team_name: "launch-teammate-{task-name}",
+     name: "worker"
+   )
 ```
 
 **Context isolation reminder:** Pass only context relevant to this specific task. Do not pass entire conversation history.
+
+### Phase 6: Review Results and Cleanup
+
+After the teammate completes:
+
+1. **Review the output** - Parse the summary and verification results
+2. **TaskUpdate** - Mark the task as completed
+3. **Cleanup**:
+   ```
+   SendMessage(to: "worker", message: "Work complete. Please shut down.")
+   TeamDelete()  — clean up team config and task directory
+   ```
 
 ## Examples
 
 ### Example 1: Complex Architecture Task (Opus)
 
-**Input:** `/launch-sub-agent Design a caching strategy for our API that handles 10k requests/second`
+**Input:** `/launch-teammate Design a caching strategy for our API that handles 10k requests/second`
 
 **Analysis:**
 
@@ -248,13 +270,23 @@ Use Task tool:
 
 **Selection:** Opus + sdd:software-architect agent
 
-**Dispatch:** Task tool with Opus model, sdd:software-architect prompt, CoT prefix, critique suffix
+**Execution:**
+
+```
+TeamCreate("launch-teammate-caching-strategy", "Design API caching strategy")
+TaskCreate("Design caching strategy for 10k req/s", "...")
+Agent(prompt: ..., team_name: "launch-teammate-caching-strategy", name: "worker")
+  → Worker completes design
+TaskUpdate(task_id, status: "completed")
+SendMessage(to: "worker", message: "Shutdown request")
+TeamDelete()
+```
 
 ---
 
 ### Example 2: Simple Documentation Update (Haiku)
 
-**Input:** `/launch-sub-agent Update the README to add --verbose flag to CLI options`
+**Input:** `/launch-teammate Update the README to add --verbose flag to CLI options`
 
 **Analysis:**
 
@@ -265,13 +297,22 @@ Use Task tool:
 
 **Selection:** Haiku (fast, cheap, sufficient for task)
 
-**Dispatch:** Task tool with Haiku model, basic CoT prefix, basic critique suffix
+**Execution:**
+
+```
+TeamCreate("launch-teammate-readme-update", "Update README CLI options")
+TaskCreate("Add --verbose flag to README", "...")
+Agent(prompt: ..., team_name: "launch-teammate-readme-update", name: "worker")
+  → Worker completes update
+TaskUpdate(task_id, status: "completed")
+TeamDelete()
+```
 
 ---
 
 ### Example 3: Moderate Implementation (Sonnet + Developer)
 
-**Input:** `/launch-sub-agent Implement pagination for /users endpoint following patterns in /products`
+**Input:** `/launch-teammate Implement pagination for /users endpoint following patterns in /products`
 
 **Analysis:**
 
@@ -282,13 +323,22 @@ Use Task tool:
 
 **Selection:** Sonnet + sdd:developer agent (non-complex but needs domain expertise)
 
-**Dispatch:** Task tool with Sonnet model, sdd:developer prompt, CoT prefix, critique suffix
+**Execution:**
+
+```
+TeamCreate("launch-teammate-pagination", "Implement /users pagination")
+TaskCreate("Add pagination to /users endpoint", "...")
+Agent(prompt: ..., team_name: "launch-teammate-pagination", name: "worker")
+  → Worker completes implementation
+TaskUpdate(task_id, status: "completed")
+TeamDelete()
+```
 
 ---
 
 ### Example 4: Research Task (Opus + Researcher)
 
-**Input:** `/launch-sub-agent Research authentication options for mobile app - evaluate OAuth2, SAML, passwordless`
+**Input:** `/launch-teammate Research authentication options for mobile app - evaluate OAuth2, SAML, passwordless`
 
 **Analysis:**
 
@@ -299,7 +349,16 @@ Use Task tool:
 
 **Selection:** Opus + sdd:researcher agent
 
-**Dispatch:** Task tool with Opus model, sdd:researcher prompt, CoT prefix, critique suffix
+**Execution:**
+
+```
+TeamCreate("launch-teammate-auth-research", "Research mobile auth options")
+TaskCreate("Evaluate OAuth2, SAML, and passwordless auth", "...")
+Agent(prompt: ..., team_name: "launch-teammate-auth-research", name: "worker")
+  → Worker completes research
+TaskUpdate(task_id, status: "completed")
+TeamDelete()
+```
 
 ## Best Practices
 
@@ -307,7 +366,7 @@ Use Task tool:
 
 - Pass only context relevant to the specific task
 - Avoid passing entire conversation history
-- Let sub-agent discover codebase patterns through tools
+- Let teammates discover codebase patterns through tools
 - Use file paths and references rather than embedding large content
 
 ### Model Selection
@@ -326,5 +385,11 @@ Use Task tool:
 ### Quality Gates
 
 - Self-critique loop is non-negotiable
-- Sub-agents must answer verification questions before completing
-- Review sub-agent output before accepting
+- Teammates must answer verification questions before completing
+- Review teammate output before accepting
+
+### Resource Management
+
+- Always TeamDelete when work is complete
+- SendMessage shutdown request to teammates before TeamDelete
+- Keep team names descriptive for easy identification

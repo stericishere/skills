@@ -1,17 +1,17 @@
 ---
 name: sadd:judge-with-debate
-description: Evaluate solutions through multi-round debate between independent judges until consensus
+description: Evaluate solutions through multi-round debate between independent judge teammates until consensus using agent teams
 argument-hint: Solution path(s) and evaluation criteria
 ---
 
 # judge-with-debate
 
 <task>
-Evaluate solutions through multi-agent debate where independent judges analyze, challenge each other's assessments, and iteratively refine their evaluations until reaching consensus or maximum rounds.
+Evaluate solutions through multi-agent debate where independent judge teammates analyze, challenge each other's assessments via inter-agent messaging, and iteratively refine their evaluations until reaching consensus or maximum rounds.
 </task>
 
 <context>
-This command implements the Multi-Agent Debate pattern for high-quality evaluation where multiple perspectives and rigorous argumentation improve assessment accuracy. Unlike single-pass evaluation, debate forces judges to defend their positions with evidence and consider counter-arguments.
+This command implements the Multi-Agent Debate pattern for high-quality evaluation where multiple perspectives and rigorous argumentation improve assessment accuracy. It uses the Agent Teams API to coordinate judge teammates through shared task lists and SendMessage for inter-round communication. Unlike single-pass evaluation, debate forces judges to defend their positions with evidence and consider counter-arguments.
 </context>
 
 ## Pattern: Debate-Based Evaluation
@@ -20,7 +20,7 @@ This command implements iterative multi-judge debate:
 
 ```
 Phase 0: Setup
-         mkdir -p .specs/reports
+         TeamCreate + mkdir -p .specs/reports
                   │
 Phase 1: Independent Analysis
          ┌─ Judge 1 → {name}.1.md ─┐
@@ -28,7 +28,8 @@ Solution ┼─ Judge 2 → {name}.2.md ─┼─┐
          └─ Judge 3 → {name}.3.md ─┘ │
                                      │
 Phase 2: Debate Round (iterative)   │
-    Each judge reads others' reports │
+    SendMessage to judges with      │
+    paths to other reports          │
          ↓                           │
     Argue + Defend + Challenge       │
          ↓                           │
@@ -37,16 +38,26 @@ Phase 2: Debate Round (iterative)   │
     Check consensus                  │
          ├─ Yes → Final Report       │
          └─ No → Next Round ─────────┘
+                                     │
+Phase 3: Cleanup                    │
+         TeamDelete ────────────────┘
 ```
 
 ## Process
 
-### Setup: Create Reports Directory
+### Setup: Create Reports Directory and Agent Team
 
-Before starting evaluation, ensure the reports directory exists:
+Before starting evaluation, ensure the reports directory exists and create the team:
 
 ```bash
 mkdir -p .specs/reports
+```
+
+```
+TeamCreate(
+  team_name: "debate-{solution-name}",
+  description: "Debate-based evaluation of '{solution-name}'"
+)
 ```
 
 **Report naming convention:** `.specs/reports/{solution-name}-{YYYY-MM-DD}.[1|2|3].md`
@@ -58,7 +69,21 @@ Where:
 
 ### Phase 1: Independent Analysis
 
-Launch **3 independent judge agents in parallel** (recommended: Opus for rigor):
+**Step 1: Create analysis tasks in the shared task list**
+
+```
+TaskCreate(title: "Independent analysis — Judge 1", description: "...")
+TaskCreate(title: "Independent analysis — Judge 2", description: "...")
+TaskCreate(title: "Independent analysis — Judge 3", description: "...")
+```
+
+**Step 2: Launch 3 independent judge teammates in parallel** (recommended: Opus for rigor):
+
+```
+Agent(prompt: ..., team_name: "debate-{solution-name}", name: "judge-1")
+Agent(prompt: ..., team_name: "debate-{solution-name}", name: "judge-2")
+Agent(prompt: ..., team_name: "debate-{solution-name}", name: "judge-3")
+```
 
 1. Each judge receives:
    - Path to solution(s) being evaluated
@@ -114,28 +139,48 @@ Instructions:
 Add to report begining `Done by Judge {N}`
 ```
 
+**Step 3: Mark analysis tasks complete**
+
+Use `TaskList` to check progress. Teammates mark their own tasks via `TaskUpdate(task_id, status: "completed")` when done.
+
 ### Phase 2: Debate Rounds (Iterative)
 
 For each debate round (max 3 rounds):
 
-Launch **3 debate agents in parallel**:
+**Step 1: Create debate tasks in the shared task list**
 
-1. Each judge agent receives:
-   - Path to their own previous report (`.specs/reports/{solution-name}-{date}.[1|2|3].md`)
-   - Paths to other judges' reports (`.specs/reports/{solution-name}-{date}.[1|2|3].md`)
+```
+TaskCreate(title: "Debate round {R} — Judge 1", description: "...")
+TaskCreate(title: "Debate round {R} — Judge 2", description: "...")
+TaskCreate(title: "Debate round {R} — Judge 3", description: "...")
+```
+
+**Step 2: Wake up judge teammates via SendMessage**
+
+Use SendMessage to notify each judge that a new debate round is starting and direct them to read other judges' reports:
+
+```
+SendMessage(to: "judge-1", message: "Debate round {R} starting. Read reports from judge-2 and judge-3 at .specs/reports/{solution-name}-{date}.2.md and .specs/reports/{solution-name}-{date}.3.md. Identify disagreements (>1 point gap), defend your positions with evidence, challenge theirs, and revise if convinced. Append 'Debate Round {R}' section to your report.")
+SendMessage(to: "judge-2", message: "Debate round {R} starting. Read reports from judge-1 and judge-3 at .specs/reports/{solution-name}-{date}.1.md and .specs/reports/{solution-name}-{date}.3.md. Identify disagreements (>1 point gap), defend your positions with evidence, challenge theirs, and revise if convinced. Append 'Debate Round {R}' section to your report.")
+SendMessage(to: "judge-3", message: "Debate round {R} starting. Read reports from judge-1 and judge-2 at .specs/reports/{solution-name}-{date}.1.md and .specs/reports/{solution-name}-{date}.2.md. Identify disagreements (>1 point gap), defend your positions with evidence, challenge theirs, and revise if convinced. Append 'Debate Round {R}' section to your report.")
+```
+
+Each judge teammate:
+1. Reads:
+   - Their own previous report (`.specs/reports/{solution-name}-{date}.[1|2|3].md`)
+   - Other judges' reports (`.specs/reports/{solution-name}-{date}.[1|2|3].md`)
    - The original solution
-2. Each judge:
-   - Identifies disagreements with other judges (>1 point score gap on any criterion)
-   - Defends their own ratings with evidence
-   - Challenges other judges' ratings they disagree with
-   - Considers counter-arguments
-   - Revises their assessment if convinced
-3. Updates their report file with new section: `## Debate Round {R}`
-4. After they reply, if they reached agreement move to Phase 3: Consensus Report
+2. Identifies disagreements with other judges (>1 point score gap on any criterion)
+3. Defends their own ratings with evidence
+4. Challenges other judges' ratings they disagree with
+5. Considers counter-arguments
+6. Revises their assessment if convinced
+7. Updates their report file with new section: `## Debate Round {R}`
+8. After they reply, if they reached agreement move to Phase 3: Consensus Report
 
-**Key principle:** Judges communicate only through filesystem - orchestrator doesn't mediate and don't read reports files itself, it can overflow your context.
+**Key principle:** Judges communicate through both filesystem and SendMessage - orchestrator doesn't mediate and doesn't read report files itself, as they can overflow your context.
 
-**Prompt template for debate judges:**
+**Prompt template for debate judges (used in initial Agent prompt, woken via SendMessage for subsequent rounds):**
 
 ```markdown
 You are Judge {N} in debate round {R}.
@@ -203,7 +248,7 @@ After considering other judges' arguments:
 ## Evidences
 [specific quotes]
 
---- 
+---
 
 CRITICAL:
 - Only revise if you find their evidence compelling
@@ -229,9 +274,10 @@ After each debate round, check for consensus:
 
 **Step 1: Run Independent Analysis (Round 1)**
 
-1. Launch 3 judge agents in parallel (Judge 1, 2, 3)
-2. Each writes their independent assessment to `.specs/reports/{solution-name}-{date}.[1|2|3].md`
-3. Wait for all 3 agents to complete
+1. Create the team and tasks
+2. Launch 3 judge teammates in parallel (Judge 1, 2, 3)
+3. Each writes their independent assessment to `.specs/reports/{solution-name}-{date}.[1|2|3].md`
+4. Wait for all 3 teammates to complete (use TaskList to monitor)
 
 **Step 2: Check for Consensus**
 
@@ -244,11 +290,11 @@ Read all three reports and extract:
 Check consensus step by step:
 1. First, extract all overall scores from each report and list them explicitly
 2. Calculate the difference between the highest and lowest overall scores
-   - If difference ≤ 0.5 points → overall consensus achieved
-   - If difference > 0.5 points → no consensus yet
+   - If difference <= 0.5 points -> overall consensus achieved
+   - If difference > 0.5 points -> no consensus yet
 3. Next, for each criterion, list all three judges' scores side by side
 4. For each criterion, calculate the difference between highest and lowest scores
-   - If any criterion has difference > 1.0 point → no consensus on that criterion
+   - If any criterion has difference > 1.0 point -> no consensus on that criterion
 5. Finally, verify consensus is achieved only if BOTH conditions are met:
    - Overall scores within 0.5 points
    - All criterion scores within 1.0 point
@@ -262,14 +308,15 @@ Check consensus step by step:
 **Step 4: Run Debate Round**
 
 1. Increment round counter (round = round + 1)
-2. Launch 3 judge agents in parallel
-3. Each agent reads:
+2. Create debate tasks: `TaskCreate(title: "Debate round {R} — Judge {N}", description: "...")`
+3. Use SendMessage to wake up each judge teammate with instructions for the debate round
+4. Each teammate reads:
    - Their own previous report from filesystem
    - Other judges' reports from filesystem
    - Original solution
-4. Each agent appends "Debate Round {R}" section to their own report file
-5. Wait for all 3 agents to complete
-6. Go back to Step 2 (Check for Consensus)
+5. Each teammate appends "Debate Round {R}" section to their own report file
+6. Wait for all 3 teammates to complete (use TaskList to monitor)
+7. Go back to Step 2 (Check for Consensus)
 
 **Step 5: Reply with Report**
 
@@ -292,7 +339,11 @@ Let's synthesize the evaluation results step by step.
        - Specific criteria where consensus wasn't reached
        - Analysis of why consensus couldn't be reached
        - Flag for human review
-4. Command complete
+4. Proceed to cleanup
+
+**Step 6: Report No Consensus**
+
+Same as Step 5 but with no-consensus framing. Proceed to cleanup.
 
 ### Phase 3: Consensus Report
 
@@ -329,6 +380,17 @@ Let's trace how consensus was reached:
 ## Final Recommendation
 Based on the consensus scores and the key strengths/weaknesses identified:
 {Pass/Fail/Needs Revision with clear justification tied to the evidence}
+```
+
+### Phase 4: Cleanup
+
+After the report is delivered, shut down all teammates and delete the team:
+
+```
+SendMessage(to: "judge-1", message: "Evaluation complete. Please shut down.")
+SendMessage(to: "judge-2", message: "Evaluation complete. Please shut down.")
+SendMessage(to: "judge-3", message: "Evaluation complete. Please shut down.")
+TeamDelete()
 ```
 
 <output>
@@ -368,17 +430,19 @@ Choose 3-5 weighted criteria relevant to the solution type:
 
 ### Common Pitfalls
 
-❌ **Judges create new reports instead of appending** - Loses debate history
-❌ **Orchestrator passes reports between judges** - Violates filesystem communication principle
-❌ **Weak initial assessments** - Garbage in, garbage out
-❌ **Too many debate rounds** - Diminishing returns after 3 rounds
-❌ **Sycophancy in debate** - Judges agree too easily without real evidence
+- **Judges create new reports instead of appending** - Loses debate history
+- **Orchestrator reads report contents** - Overflows context; use SendMessage and TaskList instead
+- **Weak initial assessments** - Garbage in, garbage out
+- **Too many debate rounds** - Diminishing returns after 3 rounds
+- **Sycophancy in debate** - Judges agree too easily without real evidence
 
-✅ **Judges append to their own report file**
-✅ **Judges read other reports from filesystem directly**
-✅ **Strong evidence-based initial assessments**
-✅ **Maximum 3 debate rounds**
-✅ **Require evidence for changing positions**
+**Do instead:**
+- Judges append to their own report file
+- Judges read other reports from filesystem directly
+- Use SendMessage to wake judges for new debate rounds
+- Strong evidence-based initial assessments
+- Maximum 3 debate rounds
+- Require evidence for changing positions
 
 ## Example Usage
 
@@ -391,6 +455,17 @@ Choose 3-5 weighted criteria relevant to the solution type:
   --criteria "correctness:30,design:25,security:20,performance:15,docs:10"
 ```
 
+**Setup:**
+```
+TeamCreate("debate-users-api", "Debate-based evaluation of users API implementation")
+TaskCreate("Independent analysis — Judge 1", "...")
+TaskCreate("Independent analysis — Judge 2", "...")
+TaskCreate("Independent analysis — Judge 3", "...")
+Agent(prompt: ..., team_name: "debate-users-api", name: "judge-1")
+Agent(prompt: ..., team_name: "debate-users-api", name: "judge-2")
+Agent(prompt: ..., team_name: "debate-users-api", name: "judge-3")
+```
+
 **Round 1 outputs** (assuming date 2025-01-15):
 - `.specs/reports/users-api-2025-01-15.1.md` - Judge 1 scores correctness 4/5, security 3/5
 - `.specs/reports/users-api-2025-01-15.2.md` - Judge 2 scores correctness 4/5, security 5/5
@@ -398,7 +473,13 @@ Choose 3-5 weighted criteria relevant to the solution type:
 
 **Disagreement detected:** Security scores range from 3-5
 
-**Round 2 debate:**
+**Round 2 debate (via SendMessage):**
+```
+SendMessage(to: "judge-1", message: "Debate round 2. Read judge-2 and judge-3 reports. Security disagreement detected (3 vs 5 vs 4). Defend or revise.")
+SendMessage(to: "judge-2", message: "Debate round 2. Read judge-1 and judge-3 reports. Security disagreement detected (3 vs 5 vs 4). Defend or revise.")
+SendMessage(to: "judge-3", message: "Debate round 2. Read judge-1 and judge-2 reports. Security disagreement detected (3 vs 5 vs 4). Defend or revise.")
+```
+
 - Judge 1 defends 3/5: "Missing rate limiting, input validation incomplete"
 - Judge 2 challenges: "Rate limiting exists in middleware (line 45)"
 - Judge 1 revises to 4/5: "Missed middleware, but input validation still weak"
@@ -408,7 +489,7 @@ Choose 3-5 weighted criteria relevant to the solution type:
 - All judges now 4-5/5 on security (within 1 point)
 - Disagreement on input validation remains
 
-**Round 3 debate:**
+**Round 3 debate (via SendMessage):**
 - Judges examine specific validation code
 - Judge 2 revises to 4/5: "Upon re-examination, email validation regex is weak"
 - Consensus: Security = 4/5
@@ -424,3 +505,12 @@ Documentation: 4.0/5
 Overall: 4.3/5 - PASS
 ```
 
+**Cleanup:**
+```
+SendMessage(to: "judge-1", message: "Evaluation complete. Please shut down.")
+SendMessage(to: "judge-2", message: "Evaluation complete. Please shut down.")
+SendMessage(to: "judge-3", message: "Evaluation complete. Please shut down.")
+TeamDelete()
+```
+
+</output>

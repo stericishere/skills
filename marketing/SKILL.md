@@ -49,3 +49,8 @@ All sub-skills at `~/.claude/skills/marketing/<name>/GUIDE.md`. Read the matchin
 |---------|--------|
 | Removing AI writing patterns, humanizing copy, natural tone | Read `~/.claude/skills/humanizer/SKILL.md` |
 | Co-authoring marketing briefs, launch plans, strategy docs | Read `~/.claude/skills/doc-coauthoring/SKILL.md` |
+| Newsletter curation, email digest formatting, subscriber growth strategies | Read `~/.claude/skills/archive/newsletter-curation/GUIDE.md` |
+| Viral hooks, opening lines, attention grabbing, scroll stoppers | Read `~/.claude/skills/archive/viral-hooks/GUIDE.md` |
+| Content creation diagnosis, 五维检测, content quality check | Read `~/.claude/skills/dbs-content/SKILL.md` |
+| Competitor benchmarking, 对标分析, five-filter method | Read `~/.claude/skills/dbs-benchmark/SKILL.md` |
+| Business model diagnosis, 商业模式诊断, problem dissolution | Read `~/.claude/skills/dbs-diagnosis/SKILL.md` |

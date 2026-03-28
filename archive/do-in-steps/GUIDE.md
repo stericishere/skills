@@ -1,41 +1,42 @@
 ---
 name: sadd:do-in-steps
-description: Execute complex tasks through sequential sub-agent orchestration with intelligent model selection, and LLM-as-a-judge verification
+description: Execute complex tasks through sequential teammate orchestration with intelligent model selection, and LLM-as-a-judge verification using Agent Teams
 argument-hint: Task description (e.g., "Refactor UserService class and update all consumers")
 ---
 
 # do-in-steps
 
 <task>
-Execute a complex task by decomposing it into sequential subtasks and orchestrating sub-agents to complete each step in order. Automatically analyze the task to identify dependencies, select optimal models for each subtask, pass relevant context from completed steps to subsequent ones, and verify each step with an independent judge before proceeding.
+Execute a complex task by decomposing it into sequential subtasks and orchestrating teammates to complete each step in order. Automatically analyze the task to identify dependencies, select optimal models for each subtask, pass relevant context from completed steps to subsequent ones, and verify each step with an independent judge before proceeding.
 </task>
 
 <context>
-This command implements the **Supervisor/Orchestrator pattern** for sequential task execution with context passing and **LLM-as-a-judge verification**. You (the orchestrator) analyze a complex task, decompose it into ordered subtasks, and dispatch focused sub-agents for each step. Each sub-agent receives:
+This command implements the **Agent Teams pattern** for sequential task execution with context passing and **LLM-as-a-judge verification**. You (the lead) create a team, populate a shared task list, and spawn teammates for each step. Each teammate receives:
 - **Isolated context** - Clean context window for its specific subtask
 - **Optimal model** - Selected based on subtask complexity (Opus/Sonnet/Haiku)
-- **Previous step context** - Summary of relevant outputs from preceding steps
+- **Previous step context** - Summary of relevant outputs from preceding steps via SendMessage
 - **Structured reasoning** - Zero-shot CoT prefix for systematic thinking
 - **Self-critique** - Internal verification before submission
 - **External judge** - LLM-as-a-judge verification with iteration loop
 
 </context>
 
-CRITICAL: You are the orchestrator - you MUST NOT perform the subtasks yourself. Your role is to:
+CRITICAL: You are the team lead - you MUST NOT perform the subtasks yourself. Your role is to:
 
 1. Analyze and decompose the task
-2. Select optimal models and agents for each subtask
-3. Dispatch sub-agents with proper prompts
-4. **Dispatch judge to verify step completion**
-5. **Iterate if judge fails the step (max 2 retries)**
-6. Collect outputs and pass context forward
-7. Report final results
+2. Create the team and shared task list with TeamCreate and TaskCreate
+3. Select optimal models and agents for each subtask
+4. Spawn teammates with Agent(team_name, name) to execute steps
+5. **Spawn judge teammates to verify step completion**
+6. **Use SendMessage to relay judge feedback for retries (max 2)**
+7. Use TaskUpdate to track progress
+8. Report final results and TeamDelete to clean up
 
 ## RED FLAGS - Never Do These
 
 **NEVER:**
 
-- Read implementation files to understand code details (let sub-agents do this)
+- Read implementation files to understand code details (let teammates do this)
 - Write code or make changes to source files directly
 - Skip decomposition and jump to implementation
 - Perform multiple steps yourself "to save time"
@@ -45,23 +46,32 @@ CRITICAL: You are the orchestrator - you MUST NOT perform the subtasks yourself.
 
 **ALWAYS:**
 
-- Use Task tool to dispatch sub-agents for ALL implementation work
-- Use Task tool to dispatch **independent judges** for step verification
+- Use TeamCreate to set up the team and shared task list
+- Use TaskCreate to populate the task list for each subtask
+- Use Agent(team_name, name) to spawn teammates for ALL implementation work
+- Use Agent(team_name, name) to spawn **independent judge teammates** for step verification
+- Use SendMessage for inter-teammate communication (feedback, context passing)
+- Use TaskUpdate to mark tasks completed or assign them
 - Pass only necessary context summaries, not full file contents
-- Wait for each step to complete before starting verifictaion AND
+- Wait for each step to complete before starting verification AND
 - Get pass from judge verification before proceeding to next step
-- Iterate with judge feedback if verification fails (max 2 retries)
+- Iterate with judge feedback via SendMessage if verification fails (max 2 retries)
+- Use TeamDelete to clean up when all work is done
 
 Any deviation from orchestration (attempting to implement subtasks yourself, reading implementation files, reading full judge reports, or making direct changes) will result in context pollution and ultimate failure, as a result you will be fired!
 
 ## Process
 
-### Setup: Create Reports Directory
+### Setup: Create Team and Reports Directory
 
-Before starting, ensure the reports directory exists:
+Before starting, set up the team and ensure the reports directory exists:
 
-```bash
-mkdir -p .specs/reports
+```
+1. TeamCreate("do-in-steps-{task-name}", "Sequential execution of {task description}")
+   → Creates team config at ~/.claude/teams/{name}/config.json
+   → Creates task directory at ~/.claude/tasks/{name}/
+
+2. mkdir -p .specs/reports
 ```
 
 **Report naming convention:** `.specs/reports/{task-name}-step-{N}-{YYYY-MM-DD}.md`
@@ -140,6 +150,18 @@ Let me analyze this task step by step to decompose it into sequential subtasks:
 
 ### Dependency Graph
 Step 1 ─→ Step 2 ─→ Step 3 ─→ ...
+```
+
+**Create Tasks in Shared List:**
+
+After decomposition, populate the shared task list:
+
+```
+For each subtask:
+  TaskCreate(
+    title: "Step {N}: {subtask_name}",
+    description: "{subtask description with inputs, outputs, and verification points}"
+  )
 ```
 
 ### Phase 2: Model Selection for Each Subtask
@@ -232,7 +254,7 @@ Is this subtask CRITICAL (architecture, interface, breaking changes)?
 
 ### Phase 3: Sequential Execution with Judge Verification
 
-Execute subtasks one by one, verify each with an independent judge, iterate if needed, then pass context forward.
+Execute subtasks one by one, verify each with an independent judge teammate, iterate if needed, then pass context forward.
 
 **Execution Flow per Step:**
 
@@ -242,19 +264,21 @@ Execute subtasks one by one, verify each with an independent judge, iterate if n
 │                                                                         │
 │   ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐   │
 │   │ Implementer  │────▶│    Judge     │────▶│ Parse Verdict        │   │
-│   │ (Sub-agent)  │     │ (Sub-agent)  │     │ (Orchestrator)       │   │
+│   │ (Teammate)   │     │ (Teammate)   │     │ (Team Lead)          │   │
 │   └──────────────┘     └──────────────┘     └──────────────────────┘   │
 │          ▲                                            │                 │
 │          │                                            ▼                 │
 │          │                              ┌─────────────────────────┐     │
 │          │                              │ PASS (≥3.5)?            │     │
-│          │                              │ ├─ YES → Next Step      │     │
+│          │                              │ ├─ YES → TaskUpdate     │     │
+│          │                              │ │        → Next Step    │     │
 │          │                              │ └─ NO  → Retry?         │     │
-│          │                              │     ├─ <2 → Retry       │     │
+│          │                              │     ├─ <2 → SendMessage │     │
+│          │                              │     │        (feedback)  │     │
 │          │                              │     └─ ≥2 → Escalate    │     │
 │          │                              └─────────────────────────┘     │
 │          │                                            │                 │
-│          └────────────── feedback ────────────────────┘                 │
+│          └──────── SendMessage(feedback) ─────────────┘                 │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -262,7 +286,7 @@ Execute subtasks one by one, verify each with an independent judge, iterate if n
 
 After each subtask completes, extract relevant context for subsequent steps:
 
-**Context to pass forward:**
+**Context to pass forward (via SendMessage to next teammate):**
 
 - Files modified (paths only, not contents)
 - Key changes made (summary)
@@ -276,7 +300,7 @@ After each subtask completes, extract relevant context for subsequent steps:
 - Do NOT pass implementation details that don't affect later steps
 - Keep context summaries concise (max 200 words per step)
 
-**Context Size Guideline:** If cumulative context exceeds ~500 words, summarize older steps more aggressively. Sub-agents can read files directly if they need details.
+**Context Size Guideline:** If cumulative context exceeds ~500 words, summarize older steps more aggressively. Teammates can read files directly if they need details.
 
 **Example of Context Accumulation (Concrete):**
 
@@ -302,7 +326,7 @@ After each subtask completes, extract relevant context for subsequent steps:
   - Constructor requires `DatabaseConnection` injection
 ```
 
-#### 3.2 Sub-Agent Prompt Construction
+#### 3.2 Teammate Prompt Construction
 
 For each subtask, construct the prompt with these mandatory components:
 
@@ -437,7 +461,7 @@ CRITICAL: Do not submit until ALL verification questions have satisfactory answe
 
 #### 3.3 Judge Verification Protocol
 
-After implementation agent completes, dispatch an **independent judge** to verify the step.
+After implementation teammate completes, spawn an **independent judge teammate** to verify the step.
 
 **Judge report location:** `.specs/reports/{task-name}-step-{N}-{YYYY-MM-DD}.md`
 
@@ -462,8 +486,8 @@ You are verifying completion of Step {N}/{total}: {subtask_name}
 </previous_steps_context>
 
 <implementation_output>
-{Path to files modified by implementation agent}
-{Context for Next Steps section from implementation agent}
+{Path to files modified by implementation teammate}
+{Context for Next Steps section from implementation teammate}
 </implementation_output>
 
 <output>
@@ -504,26 +528,28 @@ Instructions:
 CRITICAL: If FAIL, list specific issues that must be fixed for retry.
 ```
 
-#### 3.4 Dispatch, Verify, and Iterate
+#### 3.4 Spawn Teammates, Verify, and Iterate
 
 For each subtask in sequence:
 
 ```
-1. Dispatch implementation sub-agent:
-   Use Task tool:
-     - description: "Step {N}/{total}: {subtask_name}"
-     - prompt: {constructed prompt with CoT + task + previous context + self-critique}
-     - model: {selected model for this subtask}
+1. Spawn implementation teammate:
+   Agent(
+     prompt: {constructed prompt with CoT + task + previous context + self-critique},
+     team_name: "do-in-steps-{task-name}",
+     name: "implementer-step-{N}"
+   )
 
 2. Collect implementation output:
-   - Parse "Context for Next Steps" section from sub-agent response
+   - Parse "Context for Next Steps" section from teammate response
    - Note files modified and verification points
 
-3. Dispatch judge sub-agent:
-   Use Task tool:
-     - description: "Verify Step {N}/{total}: {subtask_name}"
-     - prompt: {judge verification prompt with step requirements and implementation output}
-     - model: {selected model for this subtask}
+3. Spawn judge teammate:
+   Agent(
+     prompt: {judge verification prompt with step requirements and implementation output},
+     team_name: "do-in-steps-{task-name}",
+     name: "judge-step-{N}"
+   )
 
 4. Parse judge verdict (DO NOT read full report):
    Extract from judge reply:
@@ -533,22 +559,25 @@ For each subtask in sequence:
    - IMPROVEMENTS: List of suggestions (if any)
 
 5. Decision based on verdict:
-   
+
    If VERDICT = PASS (score ≥3.5):
+     → TaskUpdate(task_id, status: "completed")
      → Proceed to next step with accumulated context
      → Include IMPROVEMENTS in context as optional enhancements
-   
+
    If VERDICT = FAIL (score <3.5):
      → Check retry count for this step
-     
+
      If retries < 2:
-       → Dispatch retry implementation agent with:
-         - Original step requirements
-         - Judge's ISSUES list as feedback
-         - Path to judge report for details
-         - Instruction to fix specific issues
+       → SendMessage(to: "implementer-step-{N}", message: {retry instructions with judge feedback})
+         OR spawn new teammate for retry:
+       → Agent(
+           prompt: {retry prompt with judge ISSUES},
+           team_name: "do-in-steps-{task-name}",
+           name: "implementer-step-{N}-retry-{R}"
+         )
        → Return to step 3 (judge verification)
-     
+
      If retries ≥ 2:
        → Escalate to user (see Error Handling)
        → Do NOT proceed to next step
@@ -556,7 +585,7 @@ For each subtask in sequence:
 6. Proceed to next subtask with accumulated context
 ```
 
-**Retry prompt template for implementation agent:**
+**Retry prompt template for implementation teammate:**
 
 ```markdown
 ## Retry Required: Step {N}/{total}
@@ -593,23 +622,23 @@ Let's fix the identified issues step by step.
 CRITICAL: Focus on fixing the specific issues identified. Do not rewrite everything.
 ```
 
-### Phase 4: Final Summary and Report
+### Phase 4: Final Summary, Report, and Cleanup
 
-After all subtasks complete and pass verification, reply with a comprehensive report:
+After all subtasks complete and pass verification, reply with a comprehensive report and clean up the team:
 
 ```markdown
 ## Sequential Execution Summary
 
 **Overall Task:** {original task description}
 **Total Steps:** {count}
-**Total Agents:** {implementation_agents + judge_agents}
+**Total Teammates:** {implementation_teammates + judge_teammates}
 
 ### Step-by-Step Results
 
 | Step | Subtask | Model | Judge Score | Retries | Status |
 |------|---------|-------|-------------|---------|--------|
-| 1 | {name} | {model} | {X.X}/5.0 | {0-2} | ✅ PASS |
-| 2 | {name} | {model} | {X.X}/5.0 | {0-2} | ✅ PASS |
+| 1 | {name} | {model} | {X.X}/5.0 | {0-2} | PASS |
+| 2 | {name} | {model} | {X.X}/5.0 | {0-2} | PASS |
 | ... | ... | ... | ... | ... | ... |
 
 ### Files Modified (All Steps)
@@ -638,6 +667,13 @@ Judge reports saved to: `.specs/reports/{task-name}-step-*`
 {Any improvements suggested by judges, tests to run, or manual verification needed}
 ```
 
+**Cleanup:**
+
+```
+1. SendMessage(to: each active teammate, message: "Work complete. Please shut down.")
+2. TeamDelete()  — clean up team config and task directory
+```
+
 ## Error Handling
 
 ### If Judge Verification Fails (Score <3.5)
@@ -647,8 +683,8 @@ The judge-verified iteration loop handles most failures automatically:
 ```
 Judge FAIL (Retry Available):
   1. Parse ISSUES from judge verdict
-  2. Dispatch retry implementation agent with feedback
-  3. Re-verify with judge
+  2. SendMessage feedback to implementer OR spawn retry teammate
+  3. Re-verify with judge teammate
   4. Repeat until PASS or max retries (2)
 ```
 
@@ -712,7 +748,7 @@ Awaiting your decision...
 1. **Do NOT guess** what previous steps produced
 2. **Re-examine** previous step output for missing information
 3. **Check judge reports** - they may have noted missing elements
-4. **Dispatch clarification sub-agent** if needed to extract missing context
+4. **SendMessage** to the relevant teammate to request clarification
 5. **Update context passing** for future similar tasks
 
 ### If Steps Conflict
@@ -744,57 +780,67 @@ Awaiting your decision...
 | 3 | Update UserController to handle UserDTO | Step 2 | Medium | Refactoring | Modified UserController |
 | 4 | Update tests for UserService and UserController | Steps 2,3 | Medium | Testing | Updated test files |
 
-**Phase 2 - Model Selection:**
+**Team Setup:**
 
-| Step | Subtask | Model | Agent | Rationale |
-|------|---------|-------|-------|-----------|
-| 1 | Create DTO | sonnet | sdd:developer | Medium complexity, standard pattern |
-| 2 | Update Service | opus | sdd:developer | High risk, core service change |
-| 3 | Update Controller | sonnet | sdd:developer | Medium complexity, follows patterns |
-| 4 | Update Tests | sonnet | sdd:tdd-developer | Test expertise |
+```
+TeamCreate("do-in-steps-user-dto-refactor", "Sequential DTO refactoring for UserService")
+TaskCreate("Step 1: Create UserDTO", "...")
+TaskCreate("Step 2: Update UserService", "...")
+TaskCreate("Step 3: Update UserController", "...")
+TaskCreate("Step 4: Update tests", "...")
+```
 
 **Phase 3 - Execution with Judge Verification:**
 
 ```
 Step 1: Create UserDTO
-  Implementation (Sonnet)...
+  Agent(prompt: ..., team_name: "do-in-steps-user-dto-refactor", name: "implementer-step-1")
     -> Created UserDTO.ts with id, name, email, createdAt fields
-  Judge Verification (Sonnet)...
+  Agent(prompt: ..., team_name: "do-in-steps-user-dto-refactor", name: "judge-step-1")
     -> VERDICT: PASS, SCORE: 4.2/5.0
     -> IMPROVEMENTS: Consider adding validation methods
-  -> Context passed: UserDTO interface, file path
+  TaskUpdate(task_id: step-1, status: "completed")
+  -> Context passed via SendMessage to next implementer
 
 Step 2: Update UserService (First Attempt Failed)
-  Implementation (Opus)...
+  Agent(prompt: ..., team_name: "...", name: "implementer-step-2")
     -> Updated return type but missed mapping logic
-  Judge Verification (Sonnet)...
+  Agent(prompt: ..., team_name: "...", name: "judge-step-2")
     -> VERDICT: FAIL, SCORE: 2.8/5.0
     -> ISSUES: Missing User->UserDTO mapping, return type changed but still returns User
-  Retry Implementation (Opus) with judge feedback...
+  SendMessage(to: "implementer-step-2", message: "Retry with judge feedback: ...")
+  OR Agent(prompt: ..., team_name: "...", name: "implementer-step-2-retry-1")
     -> Added static fromUser() factory method
     -> Updated getUser() to use mapping
-  Judge Verification (Sonnet)...
+  Agent(prompt: ..., team_name: "...", name: "judge-step-2-retry")
     -> VERDICT: PASS, SCORE: 4.5/5.0
-  -> Context passed: Method signature changed, mapping pattern used
+  TaskUpdate(task_id: step-2, status: "completed")
 
 Step 3: Update UserController
-  Implementation (Sonnet)...
+  Agent(prompt: ..., team_name: "...", name: "implementer-step-3")
     -> Updated controller to expect UserDTO
-  Judge Verification (Sonnet)...
+  Agent(prompt: ..., team_name: "...", name: "judge-step-3")
     -> VERDICT: PASS, SCORE: 4.0/5.0
-  -> Context passed: Endpoint contracts updated
+  TaskUpdate(task_id: step-3, status: "completed")
 
 Step 4: Update Tests
-  Implementation (Sonnet + sdd:developer)...
+  Agent(prompt: ..., team_name: "...", name: "implementer-step-4")
     -> Updated service and controller tests
-  Judge Verification (Sonnet)...
+  Agent(prompt: ..., team_name: "...", name: "judge-step-4")
     -> VERDICT: PASS, SCORE: 4.3/5.0
-  -> All steps complete
+  TaskUpdate(task_id: step-4, status: "completed")
+```
+
+**Cleanup:**
+
+```
+SendMessage(to: all active teammates, message: "Shutdown request")
+TeamDelete()
 ```
 
 **Final Summary:**
 
-- Total Agents: 9 (4 implementations + 1 retry + 4 judges)
+- Total Teammates: 9 (4 implementations + 1 retry + 4 judges)
 - Steps with Retries: Step 2 (1 retry)
 - All Judge Scores: 4.2, 4.5, 4.0, 4.3
 
@@ -832,13 +878,13 @@ Step 4: Update Tests
 
 | Step | Subtask | Judge Score | Retries | Status |
 |------|---------|-------------|---------|--------|
-| 1 | EmailService | 4.1/5.0 | 0 | ✅ PASS |
-| 2 | Notification triggers | 3.8/5.0 | 1 | ✅ PASS |
-| 3 | Email templates | 4.5/5.0 | 0 | ✅ PASS |
-| 4 | Configuration | 4.2/5.0 | 0 | ✅ PASS |
-| 5 | Integration tests | 4.0/5.0 | 0 | ✅ PASS |
+| 1 | EmailService | 4.1/5.0 | 0 | PASS |
+| 2 | Notification triggers | 3.8/5.0 | 1 | PASS |
+| 3 | Email templates | 4.5/5.0 | 0 | PASS |
+| 4 | Configuration | 4.2/5.0 | 0 | PASS |
+| 5 | Integration tests | 4.0/5.0 | 0 | PASS |
 
-Total Agents: 11 (5 implementations + 1 retry + 5 judges)
+Total Teammates: 11 (5 implementations + 1 retry + 5 judges)
 
 ---
 
@@ -886,20 +932,22 @@ Step 3: Update callers (Problem Detected)
     -> ISSUES: Still missing 4 occurrences, found new deprecated API usage
   Attempt 3: Judge FAIL, 3.2/5.0
     -> ISSUES: 2 occurrences in dynamically generated code
-  
+
   ESCALATION TO USER:
   "Step 3 failed after 3 attempts. Persistent issue: Dynamic code generation
    in LegacyAdapter.ts generates 'userId' at runtime.
    Options: 1) Provide guidance, 2) Modify requirements, 3) Skip, 4) Abort"
-  
+
   User response: "Update LegacyAdapter to use string template with accountId"
-  
+
   Attempt 4 (with user guidance): Judge PASS, 4.1/5.0
 
 Step 4-5: Complete without issues
+
+TeamDelete()  — cleanup
 ```
 
-Total Agents: 14 (5 implementations + 4 retries + 5 judges)
+Total Teammates: 14 (5 implementations + 4 retries + 5 judges)
 
 ## Best Practices
 
@@ -941,15 +989,16 @@ Total Agents: 14 (5 implementations + 4 retries + 5 judges)
 - Omit internal details that don't affect subsequent steps
 - Highlight patterns/conventions to maintain consistency
 - Include judge IMPROVEMENTS as optional enhancements
+- Use SendMessage to relay context between teammates
 
 ### Judge Verification
 
 - **After self-critique:** Judge reviews work that already passed internal verification
-- **Independent verification:** Judge is different agent than implementer
+- **Independent verification:** Judge is a different teammate than the implementer
 - **Structured output:** Always parse VERDICT/SCORE from reply, not full report
 - **Threshold:** 3.5/5.0 minimum score for PASS
 - **Max retries:** 2 attempts before escalating to user
-- **Feedback loop:** Pass judge ISSUES to retry implementation agent
+- **Feedback loop:** SendMessage judge ISSUES to retry implementation teammate
 
 **Judge Selection:**
 
@@ -960,16 +1009,17 @@ Total Agents: 14 (5 implementations + 4 retries + 5 judges)
 ### Quality Assurance
 
 - **Two-layer verification:** Self-critique (internal) + Judge (external)
-- **Self-critique first:** Implementation agents verify own work before submission
-- **External judge second:** Independent judge catches blind spots self-critique misses
-- **Iteration loop:** Retry with feedback until passing or max retries
+- **Self-critique first:** Implementation teammates verify own work before submission
+- **External judge second:** Independent judge teammate catches blind spots self-critique misses
+- **Iteration loop:** Retry with feedback via SendMessage until passing or max retries
 - **Chain validation:** Judges check integration with previous steps
 - **Escalation:** Don't proceed past failed steps - get user input
 - **Final integration test:** After all steps, verify the complete change works together
+- **Cleanup:** Always TeamDelete when done to free resources
 
 ## Context Format Reference
 
-### Implementation Agent Output Format
+### Implementation Teammate Output Format
 
 ```markdown
 ## Context for Next Steps
@@ -1041,4 +1091,4 @@ IMPROVEMENTS:
 ---
 ```
 
-**Key Insight:** Complex tasks with dependencies benefit from sequential execution where each step operates in a fresh context while receiving only the relevant outputs from previous steps. **External judge verification** catches blind spots that self-critique misses, while the **iteration loop** ensures quality before proceeding. This prevents both context pollution and error propagation.
+**Key Insight:** Complex tasks with dependencies benefit from sequential execution where each teammate operates in a fresh context while receiving only the relevant outputs from previous steps via SendMessage. **External judge verification** by an independent teammate catches blind spots that self-critique misses, while the **iteration loop** ensures quality before proceeding. TeamCreate provides shared task tracking, and TeamDelete ensures clean resource management. This prevents both context pollution and error propagation.

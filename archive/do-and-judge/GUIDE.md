@@ -1,39 +1,42 @@
 ---
 name: sadd:do-and-judge
-description: Execute a task with sub-agent implementation and LLM-as-a-judge verification with automatic retry loop
+description: Execute a task with teammate implementation and LLM-as-a-judge verification with automatic retry loop using Agent Teams
 argument-hint: Task description (e.g., "Refactor the UserService class to use dependency injection")
 ---
 
 # do-and-judge
 
 <task>
-Execute a single task by dispatching an implementation sub-agent, verifying with an independent judge, and iterating with feedback until passing or max retries exceeded.
+Execute a single task by spawning an implementation teammate, verifying with an independent judge teammate, and iterating with feedback via SendMessage until passing or max retries exceeded.
 </task>
 
 <context>
-This command implements a **single-task execution pattern** with **LLM-as-a-judge verification**. You (the orchestrator) dispatch a focused sub-agent to implement the task, then dispatch an independent judge to verify quality. If verification fails, you iterate with judge feedback until passing (score ≥4) or max retries (2) exceeded.
+This command implements a **single-task execution pattern** with **LLM-as-a-judge verification** using the Agent Teams API. You (the team lead) create a team, spawn a focused teammate to implement the task, then spawn an independent judge teammate to verify quality. If verification fails, you iterate with judge feedback via SendMessage until passing (score >=4) or max retries (2) exceeded.
 
 Key benefits:
 
-- **Fresh context** - Implementation agent works with clean context window
-- **External verification** - Judge catches blind spots self-critique misses
-- **Feedback loop** - Retry with specific issues identified by judge
+- **Fresh context** - Implementation teammate works with clean context window
+- **External verification** - Judge teammate catches blind spots self-critique misses
+- **Feedback loop** - Retry with specific issues relayed via SendMessage
 - **Quality gate** - Work doesn't ship until it meets threshold
+- **Shared task tracking** - TeamCreate provides visibility into task status
 </context>
 
-CRITICAL: You are the orchestrator - you MUST NOT perform the task yourself. Your role is to:
+CRITICAL: You are the team lead - you MUST NOT perform the task yourself. Your role is to:
 
-1. Analyze the task and select optimal model
-2. Dispatch implementation sub-agent with structured prompt
-3. Dispatch judge sub-agent to verify
-4. Parse verdict and iterate if needed (max 2 retries)
-5. Report final results or escalate
+1. Create the team with TeamCreate and populate tasks with TaskCreate
+2. Analyze the task and select optimal model
+3. Spawn implementation teammate with Agent(team_name, name)
+4. Spawn judge teammate to verify with Agent(team_name, name)
+5. Parse verdict and iterate via SendMessage if needed (max 2 retries)
+6. TaskUpdate to track progress
+7. Report final results and TeamDelete to clean up
 
 ## RED FLAGS - Never Do These
 
 **NEVER:**
 
-- Read implementation files to understand code details (let sub-agents do this)
+- Read implementation files to understand code details (let teammates do this)
 - Write code or make changes to source files directly
 - Skip judge verification to "save time"
 - Read judge reports in full (only parse structured headers)
@@ -41,13 +44,33 @@ CRITICAL: You are the orchestrator - you MUST NOT perform the task yourself. You
 
 **ALWAYS:**
 
-- Use Task tool to dispatch sub-agents for ALL implementation work
-- Use Task tool to dispatch independent judges for verification
-- Wait for implementation to complete before dispatching judge
+- Use TeamCreate to set up the team and shared task list
+- Use TaskCreate to define the implementation task
+- Use Agent(team_name, name) to spawn teammates for ALL implementation work
+- Use Agent(team_name, name) to spawn independent judge teammates for verification
+- Use SendMessage for relaying feedback between teammates
+- Use TaskUpdate to mark tasks completed
+- Wait for implementation to complete before spawning judge
 - Parse only VERDICT/SCORE/ISSUES from judge output
-- Iterate with feedback if verification fails
+- Iterate with feedback via SendMessage if verification fails
+- Use TeamDelete to clean up when done
 
 ## Process
+
+### Phase 0: Team Setup
+
+Create the team and task before starting work:
+
+```
+1. TeamCreate("do-and-judge-{task-name}", "Single task with judge verification: {task summary}")
+   → Creates team config at ~/.claude/teams/{name}/config.json
+   → Creates task directory at ~/.claude/tasks/{name}/
+
+2. TaskCreate(
+     title: "Implement: {brief task summary}",
+     description: "{full task description with requirements}"
+   )
+```
 
 ### Phase 1: Task Analysis and Model Selection
 
@@ -82,7 +105,7 @@ Let me analyze this task to determine the optimal configuration:
 
 **Specialized Agents:** Common agents from the `sdd` plugin include: `sdd:developer`, `sdd:researcher`, `sdd:software-architect`, `sdd:tech-lead`, `sdd:qa-engineer`. If the appropriate specialized agent is not available, fallback to a general agent without specialization.
 
-### Phase 2: Dispatch Implementation Agent
+### Phase 2: Spawn Implementation Teammate
 
 Construct the implementation prompt with these mandatory components:
 
@@ -169,19 +192,19 @@ If ANY verification question reveals a gap:
 CRITICAL: Do not submit until ALL verification questions have satisfactory answers.
 ```
 
-#### 2.4 Dispatch
+#### 2.4 Spawn Teammate
 
 ```
-Use Task tool:
-  - description: "Implement: {brief task summary}"
-  - prompt: {constructed prompt with CoT + task + self-critique}
-  - model: {selected model}
-  - subagent_type: "sdd:developer"
+Agent(
+  prompt: {constructed prompt with CoT + task + self-critique},
+  team_name: "do-and-judge-{task-name}",
+  name: "implementer"
+)
 ```
 
-### Phase 3: Dispatch Judge Agent
+### Phase 3: Spawn Judge Teammate
 
-After implementation completes, dispatch an independent judge.
+After implementation completes, spawn an independent judge teammate.
 
 **Judge prompt template:**
 
@@ -192,7 +215,7 @@ You are verifying completion of a task.
 {Original task description from user}
 
 ## Implementation Output
-{Summary section from implementation agent}
+{Summary section from implementation teammate}
 {Paths to files modified}
 
 ## Evaluation Criteria
@@ -246,14 +269,14 @@ CRITICAL: List specific issues that must be fixed for retry.
 
 ```
 
-**Dispatch:**
+**Spawn Judge:**
 
 ```
-Use Task tool:
-  - description: "Judge: {brief task summary}"
-  - prompt: {judge verification prompt}
-  - model: {same as implementation or sonnet}
-  - subagent_type: "general-purpose"
+Agent(
+  prompt: {judge verification prompt},
+  team_name: "do-and-judge-{task-name}",
+  name: "judge"
+)
 ```
 
 ### Phase 4: Parse Verdict and Iterate
@@ -271,8 +294,9 @@ Extract from judge reply:
 **Decision logic:**
 
 ```
-If score ≥4:
+If score >=4:
   → VERDICT: PASS
+  → TaskUpdate(task_id, status: "completed")
   → Report success with summary
   → Include IMPROVEMENTS as optional enhancements
 
@@ -281,17 +305,23 @@ If score <4:
   → Check retry count
 
   If retries < 2:
-    → Dispatch retry implementation agent with judge feedback
-    → Return to Phase 3 (judge verification)
+    → SendMessage(to: "implementer", message: {retry instructions with judge feedback})
+      OR spawn new teammate:
+    → Agent(
+        prompt: {retry prompt with judge ISSUES},
+        team_name: "do-and-judge-{task-name}",
+        name: "implementer-retry-{R}"
+      )
+    → Return to Phase 3 (spawn judge teammate for re-verification)
 
-  If retries ≥ 2:
+  If retries >= 2:
     → Escalate to user (see Error Handling)
     → Do NOT proceed without user decision
 ```
 
 ### Phase 5: Retry with Feedback (If Needed)
 
-**Retry prompt template:**
+**Retry prompt template (sent via SendMessage or used to spawn retry teammate):**
 
 ```markdown
 ## Retry Required
@@ -323,7 +353,7 @@ Let's fix the identified issues step by step.
 CRITICAL: Focus on fixing the specific issues identified. Do not rewrite everything.
 ```
 
-### Phase 6: Final Report
+### Phase 6: Final Report and Cleanup
 
 After task passes verification:
 
@@ -331,7 +361,7 @@ After task passes verification:
 ## Execution Summary
 
 **Task:** {original task description}
-**Result:** ✅ PASS
+**Result:** PASS
 
 ### Verification
 | Attempt | Score | Status |
@@ -349,6 +379,13 @@ After task passes verification:
 
 ### Suggested Improvements (Optional)
 {IMPROVEMENTS from judge, if any}
+```
+
+**Cleanup:**
+
+```
+1. SendMessage(to: all active teammates, message: "Work complete. Please shut down.")
+2. TeamDelete()  — clean up team config and task directory
 ```
 
 ## Error Handling
@@ -407,24 +444,31 @@ Awaiting your decision...
 **Execution:**
 
 ```
+Phase 0: Team Setup
+  TeamCreate("do-and-judge-user-validator", "Extract validation into UserValidator")
+  TaskCreate("Implement: Extract UserValidator class", "...")
+
 Phase 1: Task Analysis
   → Model: Opus
 
-Phase 2: Dispatch Implementation
-  Implementation (Opus + sdd:developer)...
+Phase 2: Spawn Implementation Teammate
+  Agent(prompt: ..., team_name: "do-and-judge-user-validator", name: "implementer")
     → Created UserValidator.ts
     → Updated UserController to use validator
     → Summary: 2 files modified, validation extracted
 
-Phase 3: Dispatch Judge
-  Judge Verification (Opus)...
+Phase 3: Spawn Judge Teammate
+  Agent(prompt: ..., team_name: "do-and-judge-user-validator", name: "judge")
     → VERDICT: PASS, SCORE: 4.2/5.0
     → ISSUES: None
     → IMPROVEMENTS: Add input validation for edge cases
 
-Phase 6: Final Report
-  ✅ PASS on attempt 1
+Phase 6: Final Report and Cleanup
+  TaskUpdate(task_id, status: "completed")
+  PASS on attempt 1
   Files: UserValidator.ts (new), UserController.ts (modified)
+  SendMessage(to: teammates, message: "Shutdown request")
+  TeamDelete()
 ```
 
 ### Example 2: Complex Task (Pass After Retry)
@@ -438,19 +482,23 @@ Phase 6: Final Report
 **Execution:**
 
 ```
+Phase 0: Team Setup
+  TeamCreate("do-and-judge-rate-limiter", "Rate limiting middleware implementation")
+  TaskCreate("Implement: Rate limiting middleware", "...")
+
 Phase 1: Task Analysis
   - Complexity: High (new feature, multiple concerns)
   - Risk: High (affects all endpoints)
   - Scope: Medium (single middleware)
   → Model: opus
 
-Phase 2: Dispatch Implementation (Attempt 1)
-  Implementation (Opus + sdd:developer)...
+Phase 2: Spawn Implementation Teammate (Attempt 1)
+  Agent(prompt: ..., team_name: "do-and-judge-rate-limiter", name: "implementer")
     → Created RateLimiter middleware
     → Added configuration schema
 
-Phase 3: Dispatch Judge
-  Judge Verification (Opus)...
+Phase 3: Spawn Judge Teammate
+  Agent(prompt: ..., team_name: "do-and-judge-rate-limiter", name: "judge")
     → VERDICT: FAIL, SCORE: 3.1/5.0
     → ISSUES:
       - Missing per-endpoint configuration
@@ -458,18 +506,21 @@ Phase 3: Dispatch Judge
     → IMPROVEMENTS: Add monitoring hooks
 
 Phase 5: Retry with Feedback
-  Implementation (Opus + sdd:developer)...
+  SendMessage(to: "implementer", message: "Retry: Fix per-endpoint config and add Redis support")
+  OR Agent(prompt: ..., team_name: "...", name: "implementer-retry-1")
     → Added endpoint-specific limits
     → Added Redis adapter option
 
-Phase 3: Dispatch Judge (Attempt 2)
-  Judge Verification (Opus)...
+Phase 3: Spawn Judge Teammate (Attempt 2)
+  Agent(prompt: ..., team_name: "...", name: "judge-attempt-2")
     → VERDICT: PASS, SCORE: 4.4/5.0
     → IMPROVEMENTS: Add metrics export
 
-Phase 6: Final Report
-  ✅ PASS on attempt 2
+Phase 6: Final Report and Cleanup
+  TaskUpdate(task_id, status: "completed")
+  PASS on attempt 2
   Files: RateLimiter.ts, config/rateLimits.ts, adapters/RedisAdapter.ts
+  TeamDelete()
 ```
 
 ### Example 3: Task Requiring Escalation
@@ -483,6 +534,10 @@ Phase 6: Final Report
 **Execution:**
 
 ```
+Phase 0: Team Setup
+  TeamCreate("do-and-judge-multi-tenancy", "Database schema migration for multi-tenancy")
+  TaskCreate("Implement: Multi-tenancy schema migration", "...")
+
 Phase 1: Task Analysis
   - Complexity: High
   - Risk: High (database schema change)
@@ -504,6 +559,7 @@ ESCALATION:
 User chose: Option 1 - "Delete orphaned records older than 1 year"
 
 Attempt 4 (with guidance): PASS (4.1/5.0)
+TeamDelete()
 ```
 
 ## Best Practices
@@ -523,11 +579,12 @@ Attempt 4 (with guidance): PASS (4.1/5.0)
 ### Iteration
 
 - **Focus fixes** - Don't rewrite everything, fix specific issues
-- **Pass feedback verbatim** - Let the implementation agent see exact issues
+- **Pass feedback verbatim** - Use SendMessage to let the implementation teammate see exact issues from the judge
 - **Escalate appropriately** - Don't loop forever on fundamental problems
 
 ### Context Management
 
-- **Keep it clean** - You orchestrate, sub-agents implement
+- **Keep it clean** - You orchestrate, teammates implement
 - **Summarize, don't copy** - Pass summaries, not full file contents
-- **Trust sub-agents** - They can read files themselves
+- **Trust teammates** - They can read files themselves
+- **Clean up** - Always TeamDelete when work is done to free resources
