@@ -24,7 +24,7 @@ Create the build brief that the rest of the workflow will execute.
    - `backend`
    - `fullstack`
 4. Record which guidance is required during execution.
-   - Keep the workflow ownership inside `superpowers`, `sadd`, and `gstack`.
+   - Keep the workflow ownership inside `superpowers`, `orchestrate`, and `gstack`.
    - Note any stack-specific references only as execution inputs, not as top-level workflow owners.
 5. Write `docs/build/brief.md` with:
    - feature summary

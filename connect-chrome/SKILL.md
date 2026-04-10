@@ -1,0 +1,1 @@
+/Users/rubbishtsui/.claude/skills/gstack/connect-chrome/SKILL.md

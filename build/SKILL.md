@@ -160,8 +160,28 @@ After the final stage (or after stopping), write `docs/build/claude.md`:
 [link if created]
 ```
 
+## Execution Model — Orchestrate, Don't Code
+
+**The main /build session never writes implementation code directly. It orchestrates.**
+
+During EXECUTE (and any backward-routed re-execution), the main session:
+1. Breaks the plan into file-level tasks (each task = one file or tightly-coupled file pair)
+2. Invokes `/orchestrate` which creates an Agent Team (`TeamCreate`)
+3. Dispatches tasks to teammates in parallel — check `~/.claude/agents/{domain}/` for matching `subagent_type`
+4. Monitors progress via `TaskList`/`SendMessage`, unblocks teammates as needed
+5. When all teammates finish, reviews the combined diff, commits the slice
+6. Shuts down teammates, `TeamDelete`
+
+The main session's job during implementation stages is:
+- Decompose → Dispatch → Monitor → Integrate → Commit
+
+Never fall back to coding in the main session. If a task is too small for a teammate, batch it with related files into one teammate's scope.
+
+This applies to the EXECUTE stage, the fix loop, and any SIMPLIFY changes that require code edits. CHECK, BRIEF, PLAN, VERIFY, and SHIP are coordination stages that run in the main session.
+
 ## Rules
 
+- **Main session orchestrates, never codes** — all implementation via Agent Teams + `/orchestrate`
 - **Never skip a stage** — every stage must run and produce its doc
 - **Never skip the fix loop** — it always runs between EXECUTE and VERIFY
 - **Gate strictly** — do not advance without the previous stage's output doc

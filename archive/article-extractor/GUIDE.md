@@ -30,7 +30,20 @@ Activate when the user:
 
 Check for article extraction tools in this order:
 
-### Option 1: reader (Recommended - Mozilla's Readability)
+### Option 1: crawl4ai (Default — browser-based, bypasses 403s)
+
+```bash
+command -v crwl
+```
+
+If not installed:
+```bash
+pip install -U crawl4ai && crawl4ai-setup
+```
+
+**Why this is the default:** Sites like ibm.com, many corporate sites, and JS-heavy pages return 403 to simple HTTP clients. crawl4ai uses headless browser automation to fetch content like a real browser, producing clean LLM-friendly Markdown.
+
+### Option 2: reader (Mozilla's Readability)
 
 ```bash
 command -v reader
@@ -43,7 +56,7 @@ npm install -g @mozilla/readability-cli
 npm install -g reader-cli
 ```
 
-### Option 2: trafilatura (Python-based, very good)
+### Option 3: trafilatura (Python-based, very good)
 
 ```bash
 command -v trafilatura
@@ -54,13 +67,41 @@ If not installed:
 pip3 install trafilatura
 ```
 
-### Option 3: Fallback (curl + simple parsing)
+### Option 4: Fallback (curl + simple parsing)
 
 If no tools available, use basic curl + text extraction (less reliable but works)
 
 ## Extraction Methods
 
-### Method 1: Using reader (Best for most articles)
+### Method 1: Using crawl4ai / crwl (DEFAULT — Best for most sites)
+
+```bash
+# Extract article as clean markdown
+crwl URL -o md
+
+# Extract with fitted markdown (removes boilerplate more aggressively)
+crwl URL -o md-fit
+
+# Extract as JSON (includes metadata)
+crwl URL -o json
+
+# Bypass cache for fresh content
+crwl URL -o md -bc
+
+# Save to file
+crwl URL -o md -O article.md
+```
+
+**Pros:**
+- Browser-based — bypasses 403s, handles JS-rendered pages
+- Produces clean, LLM-friendly Markdown by default
+- Stealth mode avoids bot detection
+- Built-in caching for repeated requests
+- Can do deep crawling across multiple pages
+
+**When to use:** Always try this first. It handles corporate sites (ibm.com, etc.), JS-heavy SPAs, and pages that block simple HTTP clients.
+
+### Method 2: Using reader (Lightweight alternative)
 
 ```bash
 # Extract article
@@ -71,8 +112,11 @@ reader "URL" > article.txt
 - Based on Mozilla's Readability algorithm
 - Excellent at removing clutter
 - Preserves article structure
+- Faster than browser-based extraction
 
-### Method 2: Using trafilatura (Best for blogs/news)
+**When to use:** When crawl4ai is unavailable, or for simple static pages where speed matters.
+
+### Method 3: Using trafilatura (Best for blogs/news)
 
 ```bash
 # Extract article
@@ -93,7 +137,7 @@ trafilatura --URL "URL" --output-format txt --no-comments --no-tables > article.
 - `--precision`: Favor precision over recall
 - `--recall`: Extract more content (may include some noise)
 
-### Method 3: Fallback (curl + basic parsing)
+### Method 4: Fallback (curl + basic parsing)
 
 ```bash
 # Download and extract basic content
@@ -171,8 +215,11 @@ FILENAME="${FILENAME}.txt"
 ```bash
 ARTICLE_URL="https://example.com/article"
 
-# Check for tools
-if command -v reader &> /dev/null; then
+# Check for tools (crawl4ai is the default)
+if command -v crwl &> /dev/null; then
+    TOOL="crawl4ai"
+    echo "Using crawl4ai (browser-based, handles 403s)"
+elif command -v reader &> /dev/null; then
     TOOL="reader"
     echo "Using reader (Mozilla Readability)"
 elif command -v trafilatura &> /dev/null; then
@@ -185,6 +232,14 @@ fi
 
 # Extract article
 case $TOOL in
+    crawl4ai)
+        # Get content as markdown
+        crwl "$ARTICLE_URL" -o md > temp_article.txt 2>/dev/null
+
+        # Get title (first heading)
+        TITLE=$(grep -m 1 '^#' temp_article.txt | sed 's/^#* //')
+        ;;
+
     reader)
         # Get content
         reader "$ARTICLE_URL" > temp_article.txt
@@ -335,13 +390,15 @@ mv temp.txt "$FILENAME"
 echo "✓ Saved to: $FILENAME"
 ```
 
-**With error handling:**
+**With error handling (crawl4ai first):**
 ```bash
-if ! reader "$URL" > temp.txt 2>/dev/null; then
+if command -v crwl &> /dev/null; then
+    crwl "$URL" -o md > temp.txt 2>/dev/null
+elif ! reader "$URL" > temp.txt 2>/dev/null; then
     if command -v trafilatura &> /dev/null; then
         trafilatura --URL "$URL" --output-format txt > temp.txt
     else
-        echo "Error: Could not extract article. Install reader or trafilatura."
+        echo "Error: Could not extract article. Install crawl4ai, reader, or trafilatura."
         exit 1
     fi
 fi

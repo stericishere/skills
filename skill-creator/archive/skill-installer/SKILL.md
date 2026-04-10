@@ -34,7 +34,7 @@ Routers at `~/.claude/skills/<router>/SKILL.md` — each routes to domain-specif
 |--------|----------|--------|
 | `pm` | Product management | PRDs, user stories, roadmaps, prioritization, discovery, JTBD, personas, workshops, epic breakdown |
 | `marketing` | Marketing | SEO, ads, CRO, email, pricing, launch strategy, analytics, social, referrals, copywriting |
-| `sadd` | Agent orchestration | Parallel execution, pipelines, competitive, judging, debate, tree-of-thought, teammates (powered by Agent Teams) |
+| `orchestrate` | Agent orchestration | Auto-routing multi-agent orchestrator — 4 modes: SINGLE, PARALLEL, SEQUENTIAL, COMPETITIVE (powered by Agent Teams with worktree isolation) |
 | `implementation-toolkit` | Technology-specific | Frontend (Expo, iOS, caching), Backend (Supabase, Stripe, LangChain, Docker, deployment), Testing |
 | `content-creation` | Writing & content | Blog posts, articles, social media, tweets, newsletters, content briefs, calendars |
 | `content-research` | Research & extraction | Reddit, YouTube transcripts, web articles, notebooks, deep research, market research |
@@ -101,15 +101,7 @@ Skills in `~/.claude/skills/archive/` — shared across routers/workflows:
 
 | Skill | Referenced by |
 |-------|--------------|
-| `do-in-parallel` | sadd, workflow phases |
-| `do-in-steps` | sadd, workflow phases |
-| `do-and-judge` | sadd, workflow phases |
-| `do-competitively` | sadd, workflow phases |
-| `judge` | sadd, workflow phases |
-| `judge-with-debate` | sadd, workflow phases |
-| `tree-of-thoughts` | sadd, workflow phases |
-| `launch-sub-agent` (launch-teammate) | sadd |
-| `subagent-driven-development` (team-driven-development) | sadd |
+| ~~do-in-parallel, do-in-steps, do-and-judge, do-competitively, judge, judge-with-debate, tree-of-thoughts, launch-sub-agent, subagent-driven-development~~ | REMOVED — all absorbed into `/orchestrate` skill |
 | `architecture-decision-records` | workflow phase-2, phase-3 |
 | `frontend-code-review` | workflow phase-3, design-frontend |
 | `component-refactoring` | workflow phase-3, design-frontend |

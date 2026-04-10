@@ -1,5 +1,6 @@
 ---
-name: skill-fetch
+name: install-skill
+user-invocable: true
 description: >
   This skill should be used when the user asks to "fetch skill", "install skill",
   "search for a skill", or when a hook outputs "MISSING EXTERNAL SKILL".

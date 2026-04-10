@@ -1,6 +1,6 @@
 ---
 name: fetch
-description: "General-purpose router for fetching ANY data from the internet or external sources. Use when the user needs to pull data from Reddit, YouTube, newsletters, NotebookLM, web articles, APIs, GitHub trending, or any external platform. Handles transcripts, threads, articles, notebooks, trends, deep research, market research, and raw web fetching. Triggers: 'fetch', 'pull from', 'get from', 'download from', 'grab', 'scrape', 'extract from', 'what does Reddit say', 'get the transcript', 'fetch newsletter', 'research this', any URL the user wants data from."
+description: "General-purpose router for fetching ANY data from the internet or external sources. Use when the user needs to pull data from Reddit, YouTube, newsletters, NotebookLM, web articles, APIs, GitHub trending, or any external platform. Handles transcripts, threads, articles, notebooks, trends, deep research, market research, and raw web fetching. Also handles NotebookLM content synthesis — mind maps, knowledge hubs, Obsidian Canvas visualizations, and section-level deep summaries (replaces the old notebooklm-synthesizer skill). Triggers: 'fetch', 'pull from', 'get from', 'download from', 'grab', 'scrape', 'extract from', 'what does Reddit say', 'get the transcript', 'fetch newsletter', 'research this', 'summarize notebooklm', 'create mind map', 'turn into notes', any URL the user wants data from."
 user-invocable: true
 args:
   - name: source
@@ -24,7 +24,7 @@ Route directly to the matching guide:
 | reddit, r/, subreddit, threads, comments | `~/.claude/skills/archive/reddit-fetch/GUIDE.md` |
 | youtube, yt, transcript, video, captions | `~/.claude/skills/archive/yt-transcript-download/GUIDE.md` |
 | newsletter, curate, digest, email roundup | `~/.claude/skills/archive/newsletter-curation/GUIDE.md` |
-| notebooklm, notebook, nlm, audio overview | `~/.claude/skills/archive/notebooklm/GUIDE.md` |
+| notebooklm, notebook, nlm, audio overview, synthesize, mind map, knowledge hub | `~/.claude/skills/archive/notebooklm/GUIDE.md` |
 | article, blog, extract, readability | `~/.claude/skills/archive/article-extractor/GUIDE.md` |
 | trends, trending, github trending, emerging | `~/.claude/skills/archive/trend-watcher/GUIDE.md` |
 | deep, research, multi-source, comprehensive | `~/.claude/skills/content-research/deep-research/GUIDE.md` |
@@ -55,10 +55,23 @@ Match the domain to the right fetcher:
 
 When the user wants raw data from a URL or API that doesn't match any specialized guide:
 
-1. **Web page content** → Use `WebFetch` or `/browse` to get the page, extract relevant data
+1. **Web page content** → Use `defuddle parse URL --md` as the **default**. It extracts clean markdown, strips nav/ads/clutter, and saves tokens. Do NOT use defuddle for URLs ending in `.md` — those are already markdown, use `WebFetch` directly.
 2. **API endpoint** → Use `curl` via Bash to hit the endpoint, parse the JSON/XML response
 3. **File download** → Use `curl -O` or `wget` to download the file
-4. **Multiple pages** → Use firecrawl MCP (`firecrawl_crawl`) if available, otherwise sequential WebFetch
+4. **Multiple pages** → Use `crwl URL --deep-crawl bfs --max-pages N -o md` for multi-page crawls. Fall back to firecrawl MCP or sequential WebFetch if unavailable.
+
+### Fallback chain for web pages
+If defuddle fails or returns empty content, fall back in order:
+1. `crwl URL -o md` (crawl4ai) — handles 403s, JS-rendered pages, bot-detection
+2. `WebFetch` — built-in tool
+3. `/browse` — full headless browser
+
+### 403 Error Recovery
+If defuddle or `WebFetch` returns a 403 error, **automatically retry with crawl4ai**:
+```bash
+crwl "URL" -o md
+```
+crawl4ai uses headless browser automation with stealth mode, which bypasses most bot-detection and corporate firewalls that block simple HTTP clients.
 
 ## Multi-source fetch
 

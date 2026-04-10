@@ -13,7 +13,7 @@ This is a single workflow skill with internal stages. Do not split it into publi
 | System | Responsibility |
 |---|---|
 | `superpowers` | fix planning, TDD, verification-before-completion, worktree discipline |
-| `sadd` | `Agent Team` orchestration for all parallel review work |
+| `orchestrate` | `Agent Team` orchestration for all parallel review work |
 | `gstack` | `/review`, `/codex`, `/simplify`, shipping-facing review surface |
 
 ## Agent Team rule
